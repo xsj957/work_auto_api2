@@ -77,16 +77,12 @@ def lighting_resources_2(api_client, auth_context):
     """
     双桌台测试资源（function 级）
 
-    前置：自动创建 region → fee1 + fee2 → desk1 + desk2
-    后置：自动清理 desk1 + desk2 → fee1 + fee2 → region
-
-    注意：两个桌台使用不同的台费类型，避免并台/转台时触发
-         服务端 uk_order_active_fee 唯一约束冲突。
+    前置：自动创建 region → fee → desk1 + desk2（两个桌台绑定同一个台费）
+    后置：自动清理 desk1 + desk2 → fee → region
 
     Returns:
         Dict: {region_id, region_no, region_name,
-               fee1_id, fee1_no, fee1_name,
-               fee2_id, fee2_no, fee2_name,
+               fee_id, fee_no, fee_name,
                desk1_id, desk1_no, desk1_name,
                desk2_id, desk2_no, desk2_name}
 

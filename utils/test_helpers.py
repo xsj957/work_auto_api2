@@ -489,19 +489,17 @@ def create_test_resources(api_client, token):
 
 def create_test_resources_2(api_client, token):
     """
-    一键创建双桌台资源：region → fee1 + fee2 → desk1 + desk2
+    一键创建双桌台资源：region → fee → desk1 + desk2
     返回 dict: {region_id, region_no, region_name,
-                fee1_id, fee1_no, fee1_name,
-                fee2_id, fee2_no, fee2_name,
+                fee_id, fee_no, fee_name,
                 desk1_id, desk1_no, desk1_name,
                 desk2_id, desk2_no, desk2_name}
 
-    注意：两个桌台使用不同的台费类型，避免转台/并台时触发数据库唯一约束冲突
+    两个桌台绑定同一个台费（与手动操作一致）
     """
     suffix = _gen_suffix()
     region_name = f"{REGION_NAME_PREFIX}_{suffix}"
-    fee1_name = f"{FEE_NAME_PREFIX}_{suffix}_1"
-    fee2_name = f"{FEE_NAME_PREFIX}_{suffix}_2"
+    fee_name = f"{FEE_NAME_PREFIX}_{suffix}"
     desk1_name = f"{DESK_NAME_PREFIX}_{suffix}_1"
     desk2_name = f"{DESK_NAME_PREFIX}_{suffix}_2"
 
@@ -509,22 +507,19 @@ def create_test_resources_2(api_client, token):
     region_id = create_region(api_client, token, name=region_name)
     region_no = verify_region(api_client, token, name=region_name)
 
-    # 2. 创建两个不同的台费（避免转台/并台时费用冲突）
-    fee1_id = create_fee(api_client, token, name=fee1_name)
-    fee1_no, _ = verify_fee(api_client, token, name=fee1_name)
+    # 2. 创建一个台费（两个桌台共用）
+    fee_id = create_fee(api_client, token, name=fee_name)
+    fee_no, _ = verify_fee(api_client, token, name=fee_name)
 
-    fee2_id = create_fee(api_client, token, name=fee2_name)
-    fee2_no, _ = verify_fee(api_client, token, name=fee2_name)
-
-    # 3. 创建桌台1（使用 fee1）
-    desk1_id = create_desk(api_client, token, region_no, fee1_no,
-                           fee_name=fee1_name, desk_name=desk1_name, index=1)
+    # 3. 创建桌台1
+    desk1_id = create_desk(api_client, token, region_no, fee_no,
+                           fee_name=fee_name, desk_name=desk1_name, index=1)
     desk1_no, _ = verify_desk(api_client, token, name=desk1_name)
     verify_desk_idle(api_client, token, name=desk1_name)
 
-    # 4. 创建桌台2（使用 fee2）
-    desk2_id = create_desk(api_client, token, region_no, fee2_no,
-                           fee_name=fee2_name, desk_name=desk2_name, index=2)
+    # 4. 创建桌台2
+    desk2_id = create_desk(api_client, token, region_no, fee_no,
+                           fee_name=fee_name, desk_name=desk2_name, index=2)
     desk2_no, _ = verify_desk(api_client, token, name=desk2_name)
     verify_desk_idle(api_client, token, name=desk2_name)
 
@@ -532,12 +527,9 @@ def create_test_resources_2(api_client, token):
         "region_id": region_id,
         "region_no": region_no,
         "region_name": region_name,
-        "fee1_id": fee1_id,
-        "fee1_no": fee1_no,
-        "fee1_name": fee1_name,
-        "fee2_id": fee2_id,
-        "fee2_no": fee2_no,
-        "fee2_name": fee2_name,
+        "fee_id": fee_id,
+        "fee_no": fee_no,
+        "fee_name": fee_name,
         "desk1_id": desk1_id,
         "desk1_no": desk1_no,
         "desk1_name": desk1_name,

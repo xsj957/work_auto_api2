@@ -9,6 +9,8 @@
 - 不再依赖 config.yaml 中的预配桌台数据
 """
 
+import time
+
 import pytest
 
 from core.assertions import assert_response
@@ -67,6 +69,9 @@ class TestCombineWorkflow:
         assert_response(response).code_is(200).data_is_not_null().validate()
         order_no_2 = response.get_data()
         info(f"      开台成功! orderNo={order_no_2}")
+
+        # 等待服务端同步费用数据（与手动操作保持一致的时序）
+        time.sleep(2)
 
         # 3. 并台（桌台2 → 桌台1）
         info(f"并台: {desk_no_2} → {desk_no_1}...")
