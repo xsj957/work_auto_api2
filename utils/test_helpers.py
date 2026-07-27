@@ -292,7 +292,7 @@ def verify_desk(api_client, token, name):
 def verify_desk_idle(api_client, token, name):
     """listV3 校验桌台空闲（轮询直到找到）"""
     payload = {
-        "filter": {"storeNo": STORE_NO},
+        "filter": {"storeNo": STORE_NO, "deskName": name},
         "storeNo": STORE_NO,
         "statusList": [1, 2, 3, 5],
     }
@@ -489,14 +489,19 @@ def create_test_resources(api_client, token):
 
 def create_test_resources_2(api_client, token):
     """
-    一键创建双桌台资源：region → fee → desk1 + desk2
-    返回 dict: {region_id, region_no, region_name, fee_id, fee_no, fee_name,
+    一键创建双桌台资源：region → fee1 + fee2 → desk1 + desk2
+    返回 dict: {region_id, region_no, region_name,
+                fee1_id, fee1_no, fee1_name,
+                fee2_id, fee2_no, fee2_name,
                 desk1_id, desk1_no, desk1_name,
                 desk2_id, desk2_no, desk2_name}
+
+    注意：两个桌台使用不同的台费类型，避免转台/并台时触发数据库唯一约束冲突
     """
     suffix = _gen_suffix()
     region_name = f"{REGION_NAME_PREFIX}_{suffix}"
-    fee_name = f"{FEE_NAME_PREFIX}_{suffix}"
+    fee1_name = f"{FEE_NAME_PREFIX}_{suffix}_1"
+    fee2_name = f"{FEE_NAME_PREFIX}_{suffix}_2"
     desk1_name = f"{DESK_NAME_PREFIX}_{suffix}_1"
     desk2_name = f"{DESK_NAME_PREFIX}_{suffix}_2"
 
@@ -504,19 +509,22 @@ def create_test_resources_2(api_client, token):
     region_id = create_region(api_client, token, name=region_name)
     region_no = verify_region(api_client, token, name=region_name)
 
-    # 2. 创建台费
-    fee_id = create_fee(api_client, token, name=fee_name)
-    fee_no, _ = verify_fee(api_client, token, name=fee_name)
+    # 2. 创建两个不同的台费（避免转台/并台时费用冲突）
+    fee1_id = create_fee(api_client, token, name=fee1_name)
+    fee1_no, _ = verify_fee(api_client, token, name=fee1_name)
 
-    # 3. 创建桌台1
-    desk1_id = create_desk(api_client, token, region_no, fee_no,
-                           fee_name=fee_name, desk_name=desk1_name, index=1)
+    fee2_id = create_fee(api_client, token, name=fee2_name)
+    fee2_no, _ = verify_fee(api_client, token, name=fee2_name)
+
+    # 3. 创建桌台1（使用 fee1）
+    desk1_id = create_desk(api_client, token, region_no, fee1_no,
+                           fee_name=fee1_name, desk_name=desk1_name, index=1)
     desk1_no, _ = verify_desk(api_client, token, name=desk1_name)
     verify_desk_idle(api_client, token, name=desk1_name)
 
-    # 4. 创建桌台2
-    desk2_id = create_desk(api_client, token, region_no, fee_no,
-                           fee_name=fee_name, desk_name=desk2_name, index=2)
+    # 4. 创建桌台2（使用 fee2）
+    desk2_id = create_desk(api_client, token, region_no, fee2_no,
+                           fee_name=fee2_name, desk_name=desk2_name, index=2)
     desk2_no, _ = verify_desk(api_client, token, name=desk2_name)
     verify_desk_idle(api_client, token, name=desk2_name)
 
@@ -524,9 +532,12 @@ def create_test_resources_2(api_client, token):
         "region_id": region_id,
         "region_no": region_no,
         "region_name": region_name,
-        "fee_id": fee_id,
-        "fee_no": fee_no,
-        "fee_name": fee_name,
+        "fee1_id": fee1_id,
+        "fee1_no": fee1_no,
+        "fee1_name": fee1_name,
+        "fee2_id": fee2_id,
+        "fee2_no": fee2_no,
+        "fee2_name": fee2_name,
         "desk1_id": desk1_id,
         "desk1_no": desk1_no,
         "desk1_name": desk1_name,
@@ -538,8 +549,18 @@ def create_test_resources_2(api_client, token):
 
 def cleanup_test_resources(api_client, token, resources):
     """逆序清理资源：desk → fee → region（支持单桌台和双桌台）"""
-    cleanup_desk(api_client, token, resources.get("desk_id"))
+    # 支持 desk_id（单桌台）和 desk1_id（双桌台）两种键名
+    desk_id = resources.get("desk_id") or resources.get("desk1_id")
+    cleanup_desk(api_client, token, desk_id)
     if "desk2_id" in resources:
         cleanup_desk(api_client, token, resources.get("desk2_id"))
-    cleanup_fee(api_client, token, resources.get("fee_id"))
+
+    # 支持单台费（fee_id）和双台费（fee1_id, fee2_id）
+    if "fee_id" in resources:
+        cleanup_fee(api_client, token, resources.get("fee_id"))
+    if "fee1_id" in resources:
+        cleanup_fee(api_client, token, resources.get("fee1_id"))
+    if "fee2_id" in resources:
+        cleanup_fee(api_client, token, resources.get("fee2_id"))
+
     cleanup_region(api_client, token, resources.get("region_id"))

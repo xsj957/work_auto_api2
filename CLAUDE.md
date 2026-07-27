@@ -212,7 +212,24 @@ utils/
 
 ### 关键模式
 
-**Fixture 依赖链**：`test_desk` 依赖 `test_region` + `test_fee`，teardown 按逆序自动清理（桌→费→区）。`auth_context` 在 session 级缓存 token。
+**Fixture 架构（前置/后置数据管理）**：
+
+```
+session 级（全局前置，整个会话只执行一次）
+  ├── api_client      → APIClient 实例（fixtures/auth_fixtures.py）
+  ├── auth_token       → 登录 token（自动重试 3 次，指数退避）
+  └── auth_context     → TestContext（token + merchant_no + store_no）
+
+function 级（每个测试独立前置/后置）
+  ├── lighting_resources    → 单桌台：region → fee → desk（8 个灯控测试使用）
+  └── lighting_resources_2  → 双桌台：region → fee1 + fee2 → desk1 + desk2（转台/并台）
+       注意：两个桌台使用不同台费，避免服务端 uk_order_active_fee 唯一约束冲突
+
+teardown 顺序（pytest 自动逆序清理）：desk → fee → region
+```
+
+`conftest.py` 只负责 pytest hooks + fixture 导入注册，不含 fixture 定义。
+所有 fixture 定义在 `fixtures/` 目录下，业务逻辑在 `utils/test_helpers.py`。
 
 **API 响应日志黑名单**：`core/api_client.py` 中 `_SHORT_LOG_PATHS` 集合内的路径只记摘要（code/msg/耗时），不 dump 完整 data。新增查询类接口需在此添加。
 

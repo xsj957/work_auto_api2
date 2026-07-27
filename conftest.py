@@ -54,60 +54,9 @@ from fixtures.auth_fixtures import (
     function_auth_context,
 )
 from fixtures.resource_fixtures import (
-    test_region,
-    test_fee,
-    test_desk,
-    test_resources,
+    lighting_resources,
+    lighting_resources_2,
 )
-
-
-# ================================================================
-#  Lighting Fixtures（区域/台费/桌台 自动创建+清理）
-# ================================================================
-
-@pytest.fixture(scope="function")
-def lighting_resources(api_client, auth_context):
-    """
-    灯光测试单桌台资源（函数级）
-    自动创建 region → fee → desk，测试结束后自动清理。
-    Returns: Dict: region_no, desk_no, desk_name 等
-    """
-    from utils.test_helpers import create_test_resources, cleanup_test_resources
-    from utils.debug_utils import info
-    token = auth_context.token
-
-    info("  [灯光资源] 开始创建区域→台费→桌台...")
-    resources = create_test_resources(api_client, token)
-    info(f"  [灯光资源] 创建完成: desk_no={resources['desk_no']}")
-
-    yield resources
-
-    info("  [灯光资源] 开始清理资源...")
-    cleanup_test_resources(api_client, token, resources)
-    info("  [灯光资源] 清理完成")
-
-
-@pytest.fixture(scope="function")
-def lighting_resources_2(api_client, auth_context):
-    """
-    灯光测试双桌台资源（函数级）
-    自动创建 region → fee → desk1 + desk2，测试结束后自动清理。
-    用于转台、并台等需要两个桌台的场景。
-    Returns: Dict: desk1_no, desk2_no 等
-    """
-    from utils.test_helpers import create_test_resources_2, cleanup_test_resources
-    from utils.debug_utils import info
-    token = auth_context.token
-
-    info("  [灯光资源] 开始创建区域→台费→双桌台...")
-    resources = create_test_resources_2(api_client, token)
-    info(f"  [灯光资源] 创建完成: desk1={resources['desk1_no']}, desk2={resources['desk2_no']}")
-
-    yield resources
-
-    info("  [灯光资源] 开始清理资源...")
-    cleanup_test_resources(api_client, token, resources)
-    info("  [灯光资源] 清理完成")
 
 
 # ================================================================
