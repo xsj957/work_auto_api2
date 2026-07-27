@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 仓库信息
+
+- **仓库地址**：`git@github.com:xsj957/work_auto_api2.git`
+- **作者邮箱**：13538506002@163.com
+- **GitHub 主页**：https://github.com/xsj957/work_auto_api2
+
 ## 项目概述
 
 卓铭桌台管理系统接口自动化测试框架，测试目标为商户端 SaaS 平台（https://uat.supervisionsstore.com），覆盖桌台管理、支付流程、灯光控制等业务场景。
