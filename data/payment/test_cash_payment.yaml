@@ -1,0 +1,61 @@
+# 现金支付测试用例
+# 测试场景：完整支付流程（开台 → 计费 → 结账 → 支付）
+
+test_cases:
+  # ================================================================
+  #  基础测试用例
+  # ================================================================
+
+  - case_id: "cash_payment_001"
+    description: "现金支付_1小时_20元"
+
+    test_data:
+      # 桌台信息
+      desk_name_prefix: "测试桌台"
+      open_duration: 1  # 小时
+      channel: "cash"
+
+      # 预期结果
+      expected_amount: 20.0
+      expected_code: 200
+      expected_desk_status: "3"  # 已关台
+
+    expected:
+      code: 200
+      order_status: "已支付"
+      payment_status: "success"
+      desk_status: "3"
+
+  - case_id: "cash_payment_002"
+    description: "现金支付_2小时_40元"
+
+    test_data:
+      desk_name_prefix: "测试桌台"
+      open_duration: 2
+      channel: "cash"
+      expected_amount: 40.0
+      expected_code: 200
+      expected_desk_status: "3"
+
+    expected:
+      code: 200
+      order_status: "已支付"
+      payment_status: "success"
+      desk_status: "3"
+
+  - case_id: "cash_payment_003"
+    description: "现金支付_30分钟_10元"
+
+    test_data:
+      desk_name_prefix: "测试桌台"
+      open_duration: 0.5
+      channel: "cash"
+      expected_amount: 10.0
+      expected_code: 200
+      expected_desk_status: "3"
+
+    expected:
+      code: 200
+      order_status: "已支付"
+      payment_status: "success"
+      desk_status: "3"

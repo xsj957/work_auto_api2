@@ -1,0 +1,21 @@
+# 测试报告
+reports/
+
+# 日志文件
+logs/
+*.log
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 环境变量（如需）
+.env
+.venv/

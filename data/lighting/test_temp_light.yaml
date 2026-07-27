@@ -1,0 +1,20 @@
+# 灯控测试用例 - 临时灯开关
+# 测试场景：临时灯开台/关台
+
+test_cases:
+  - case_id: "temp_light_001"
+    description: "临时灯开台_1号桌"
+
+    test_data:
+      # 设备信息
+      device_id: "338"
+      desk_no: "SD202606171105226580"
+      lsid: "SD202606171505254807"
+
+      # 预期结果
+      expected_code: 200
+      expected_msg_contains: "成功"
+
+    expected:
+      code: 200
+      msg: "成功"

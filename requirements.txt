@@ -1,0 +1,26 @@
+# 核心依赖
+pytest>=7.1.2
+allure-pytest>=2.16.0
+pydantic>=1.8.2,<2.0.0  # 使用 v1 版本
+requests>=2.26.0
+PyYAML>=6.0
+jsonpath>=0.82
+
+# 数据库
+PyMySQL>=1.0.2
+
+# 测试数据生成
+Faker>=9.8.3
+
+# 日志和报告
+colorlog>=6.6.0
+openpyxl>=3.0.9
+
+# 通知
+DingtalkChatbot>=1.5.3
+
+# 可选依赖
+pytest-xdist>=3.0.0  # 并行测试
+pytest-forked>=1.4.0  # 进程隔离
+requests-toolbelt>=0.9.1  # HTTP 工具
+ruamel.yaml>=0.17.21  # YAML 处理
