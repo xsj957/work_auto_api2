@@ -237,6 +237,8 @@ teardown 顺序（pytest 自动逆序清理）：desk → fee → region
 
 ## 配置
 
-- 测试环境通过 `config/config.yaml` 的 `env` 字段切换
-- 业务数据（登录账号、门店号、桌台 ID 等）在 `config.yaml` 的 `business_data` 中配置
+- 测试环境通过 `config/config.yaml` 顶层 `env` 字段切换（`UAT` / `PROD`）
+- `config.py` 启动时读取 `env`，自动将 `environments[env]` 下的 `host` / `app_host` / `ssl_verify` / `business_data` / `payment_test` 合并到顶层，代码中访问方式不变（如 `config.host`、`config.business_data`）
+- 新增环境：在 `environments` 下添加对应 key，再在 `env` 字段引用即可；若 `env` 引用了不存在的 key，启动时会抛 `ValueError`
+- 业务数据（登录账号、门店号、桌台 ID 等）在 `environments[env].business_data` 中配置
 - 通知渠道通过 `notification_type` 控制（0=关闭, 1=钉钉, 2=微信, 3=邮件, 4=飞书）

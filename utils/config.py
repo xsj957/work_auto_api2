@@ -30,10 +30,33 @@ class Config:
         self._load_config()
 
     def _load_config(self):
-        """加载配置文件"""
+        """
+        加载配置文件
+
+        读取 env 字段，将 environments[env] 下的配置合并到顶层，
+        使 host / business_data / payment_test 等访问方式保持不变。
+        """
+        raw = {}
         if self.config_file.exists():
             with open(self.config_file, 'r', encoding='utf-8') as f:
-                self._config = yaml.safe_load(f) or {}
+                raw = yaml.safe_load(f) or {}
+
+        env = raw.get("env", "UAT")
+        environments = raw.get("environments", {}) or {}
+        env_cfg = environments.get(env)
+
+        if env_cfg is None:
+            available = ", ".join(environments.keys()) or "(无)"
+            raise ValueError(
+                f"config.yaml: env='{env}' 未在 environments 中定义，"
+                f"可选值: {available}"
+            )
+
+        # 合并：env_cfg 中的键覆盖顶层同名字段
+        self._config = {k: v for k, v in raw.items() if k != "environments"}
+        for k, v in env_cfg.items():
+            self._config[k] = v
+        self._config["env"] = env
 
     def get(self, key: str, default: Any = None) -> Any:
         """

@@ -1,16 +1,12 @@
 project_name: 卓铭桌台管理系统
 
-env: UAT测试环境
+# ================================================================
+# 当前环境：UAT / PROD（切换后，host/business_data/payment_test 自动跟随）
+# ================================================================
+env: UAT
+
 # 测试人员名称，作用于自动生成代码的作者，以及发送企业微信、钉钉通知的测试负责人
 tester_name: 接口探
-
-# 域名1 - 商户端 API
-host: https://uat.supervisionsstore.com
-# 域名2 - 小程序端 API
-app_host: https://uat.supervisionsstore.com
-
-# SSL 验证（UAT/测试环境可设为 false，生产环境务必 true）
-ssl_verify: false
 
 # 实时更新用例内容，False时，已生成的代码不会在做变更
 # 设置为True的时候，修改yaml文件的用例，代码中的内容会实时更新
@@ -24,7 +20,7 @@ excel_report: False
 
 # 注意点：
 # 之前为了小伙伴们拉下代码执行的时候不受影响，企业微信、钉钉、邮箱的通知配置的都是我的
-# 我发现很多拉代码的小伙伴这里配置都没改，所有的通知都发到我这里来了哦~~麻烦看到这里的小伙伴自己改一下相关配置
+# 我发现很多拉代码的小伙伴这里配置都没改，所有的通知都发到我这里来了哦~~麻烦看到这里的小伙伴们自己改一下相关配置
 
 # 钉钉相关配置
 ding_talk:
@@ -32,6 +28,7 @@ ding_talk:
   secret: SECdea6489dfcc3b9259da943c5ae38d3530696f2fa83ac72a9ee716e9511675b9b
 #  webhook:
 #  secret:
+
 # 数据库相关配置
 mysql_db:
   # 数据库开关
@@ -65,80 +62,152 @@ email:
 lark:
   webhook:
 
-# ================================================================
-# 业务测试数据（桌号/Token/账号过期后改这里，不需要改代码）
-# ================================================================
-business_data:
-  login:
-    username: xsj123
-    password: "123456"
-  xcx_token: "b214b977d1a34dce8c970bf979a9fb13"   # 小程序Token，7天有效
-  storeNo: "344917"
-  merchantNo: "MI000026040120548192"
-  userNo: "MU202606171016150897"
-  device_id: 322
-  golferPhones:
-    - "13538506002"
-    - "13538227451"
-  lsid: "SD202606171505254807"
-  success_code: 200
-
 
 # ================================================================
-# 支付测试（payment_test）默认参数
-# 运行时名称需加随机后缀，格式：f"{base_name}_{timestamp}{random}"
+# 环境配置（按 env 字段自动合并到顶层）
+# 切换 env 后，host / app_host / ssl_verify / business_data / payment_test 会自动跟随
 # ================================================================
-payment_test:
-  # 轮询查询配置（系统调度接口新增资源后需要等待同步）
-  # 稳定性测试连续执行时服务端同步较慢，需要更长等待
-  polling:
-    initial_wait: 8        # 首次等待时间（秒），给系统调度预留缓冲
-    interval: 3            # 轮询间隔（秒）
-    max_attempts: 8        # 最大轮询次数
-    timeout: 35            # 总超时时间（秒），超过则放弃
+environments: 
+  # ----------------------------------------------------------------
+  # UAT 测试环境
+  # ----------------------------------------------------------------
+  UAT:
+    host: https://uat.supervisionsstore.com
+    app_host: https://uat.supervisionsstore.com
+    ssl_verify: false
 
-  region:
-    base_name: "测试区"
-    sort: 1
-    status: 1
-    type: "1"
+    business_data:
+      login:
+        username: "13538506002"
+        password: "506002"
+      xcx_token: "b214b977d1a34dce8c970bf979a9fb13"   # 小程序Token，7天有效
+      storeNo: "692256"
+      merchantNo: "MI000026081317423923"
+      userNo: "MU202606171016150897"
+      device_id: 322
+      golferPhones:
+        - "13538506002"
+        - "19928710361"
+      lsid: "SD202606171505254807"
+      success_code: 200
 
-  fee:
-    base_name: "测试费"
-    price: 20
-    time: 60
-    max_pause_time: 10
-    min_pause_interval: 1
-    min_time: 1
-    can_pause: 1
-    low_consume_type: 0
-    unit_time: 1
-    over_unit_time: 0
+    payment_test:
+      # 轮询查询配置（系统调度接口新增资源后需要等待同步）
+      # 稳定性测试连续执行时服务端同步较慢，需要更长等待
+      polling:
+        initial_wait: 8        # 首次等待时间（秒），给系统调度预留缓冲
+        interval: 3            # 轮询间隔（秒）
+        max_attempts: 8        # 最大轮询次数
+        timeout: 35            # 总超时时间（秒），超过则放弃
 
-  desk:
-    base_name: "测试桌台"
-    type: "1"
-    status: 2
-    user_discount: 2
-    can_clock: 1
-    clock_cashier: 1
-    clock_mini_program: 1
-    is_sync_setting: "1"
-    is_close: 0
-    is_account: 0
-    is_order: 0
-    is_stand: 0
-    is_reserve: 0
-    active_key: 1
-    can_balance: 1
+      region:
+        base_name: "测试区"
+        sort: 1
+        status: 1
+        type: "1"
 
-  # 支付方式 (channelCode, 显示名称, 会员手机号/None)
-  # czk(储值卡)、tfk(台费卡) 需绑定会员
-  channels:
-    - { code: "cash",       name: "现金支付",       phone: null }
-    - { code: "czk",        name: "储值卡余额支付", phone: "13538506002" }
-    - { code: "wx_offline", name: "微信线下扫码",   phone: null }
-    - { code: "tfk",        name: "台费卡余额支付", phone: "13538506002" }
+      fee:
+        base_name: "测试费"
+        price: 20
+        time: 60
+        max_pause_time: 10
+        min_pause_interval: 1
+        min_time: 1
+        can_pause: 1
+        low_consume_type: 0
+        unit_time: 1
+        over_unit_time: 0
 
+      desk:
+        base_name: "测试桌台"
+        type: "1"
+        status: 2
+        user_discount: 2
+        can_clock: 1
+        clock_cashier: 1
+        clock_mini_program: 1
+        is_sync_setting: "1"
+        is_close: 0
+        is_account: 0
+        is_order: 0
+        is_stand: 0
+        is_reserve: 0
+        active_key: 1
+        can_balance: 1
 
+      # 支付方式 (channelCode, 显示名称, 会员手机号/None)
+      # czk(储值卡)、tfk(台费卡) 需绑定会员
+      channels:
+        - { code: "cash",       name: "现金支付",       phone: null }
+        - { code: "czk",        name: "储值卡余额支付", phone: "13538506002" }
+        - { code: "wx_offline", name: "微信线下扫码",   phone: null }
+        - { code: "tfk",        name: "台费卡余额支付", phone: "13538506002" }
 
+  # ----------------------------------------------------------------
+  # 生产环境（业务数据请按实际填写）
+  # ----------------------------------------------------------------
+  PROD:
+    host: https://xczg.supervisions.cn/store
+    app_host: https://xczg.supervisions.cn/store
+    ssl_verify: true
+
+    business_data:
+      login:
+        username: "xsj123"
+        password: "123456"
+      xcx_token: ""
+      storeNo: ""
+      merchantNo: ""
+      userNo: ""
+      device_id: ""
+      golferPhones: []
+      lsid: ""
+      success_code: 200
+
+    payment_test:
+      polling:
+        initial_wait: 8
+        interval: 3
+        max_attempts: 8
+        timeout: 35
+
+      region:
+        base_name: "测试区"
+        sort: 1
+        status: 1
+        type: "1"
+
+      fee:
+        base_name: "测试费"
+        price: 20
+        time: 60
+        max_pause_time: 10
+        min_pause_interval: 1
+        min_time: 1
+        can_pause: 1
+        low_consume_type: 0
+        unit_time: 1
+        over_unit_time: 0
+
+      desk:
+        base_name: "测试桌台"
+        type: "1"
+        status: 2
+        user_discount: 2
+        can_clock: 1
+        clock_cashier: 1
+        clock_mini_program: 1
+        is_sync_setting: "1"
+        is_close: 0
+        is_account: 0
+        is_order: 0
+        is_stand: 0
+        is_reserve: 0
+        active_key: 1
+        can_balance: 1
+
+      channels:
+        - { code: "cash",       name: "现金支付",       phone: null }
+        - { code: "czk",        name: "储值卡余额支付", phone: "13538506002"}
+        - { code: "wx_offline", name: "微信线下扫码",   phone: null }
+        - { code: "tfk",        name: "台费卡余额支付", phone: "13538506002"}

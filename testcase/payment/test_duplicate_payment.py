@@ -92,7 +92,7 @@ class TestDuplicatePayment:
         fee_id = create_fee(api_client, token, merchant_no, name=fee_name)
         fee_no, fee_id = verify_fee(api_client, token, name=fee_name)
 
-        desk_id = create_desk(api_client, token, region_no, fee_no, name=desk_name, fee_name=fee_name)
+        desk_id = create_desk(api_client, token, region_no, fee_no, fee_name, desk_name=desk_name)
         desk_no, desk_id = verify_desk(api_client, token, name=desk_name)
         verify_desk_idle(api_client, token, name=desk_name)
 
@@ -571,12 +571,12 @@ class TestDuplicatePayment:
         fee_id = create_fee(api_client, token, merchant_no, name=fee_name)
         fee_no, fee_id = verify_fee(api_client, token, name=fee_name)
 
-        desk_id = create_desk(api_client, token, region_no, fee_no, name=desk_name, fee_name=fee_name)
+        desk_id = create_desk(api_client, token, region_no, fee_no, fee_name, desk_name=desk_name)
         desk_no, desk_id = verify_desk(api_client, token, name=desk_name)
         verify_desk_idle(api_client, token, name=desk_name)
 
         golfer_info = {}
-        for phone in ["13538227451", "13538506002"]:
+        for phone in ["19928710361", "13538506002"]:
             response = api_client.post(
                 "/merchant-api/store/golfer/pageV2",
                 {"storeNo": STORE_NO, "pageNo": 1, "pageSize": 10,
@@ -608,7 +608,7 @@ class TestDuplicatePayment:
 
         golfer_a = golfer_info["13538506002"]["golferNo"]
         balance_a_before = golfer_info["13538506002"]["balance_before"]
-        balance_b_before = golfer_info["13538227451"]["balance_before"]
+        balance_b_before = golfer_info["19928710361"]["balance_before"]
 
         info(f"  应付金额={total_amount}元")
         info(f"  会员A初始余额={balance_a_before}元, 会员B初始余额={balance_b_before}元")
@@ -697,8 +697,8 @@ class TestDuplicatePayment:
             info(f"    - {p.get('payTypeName')} {p.get('paymentPrice')}元, golferNo={p.get('golferNo')}")
 
         # 校验余额
-        balance_a_after = get_member_balance(api_client, token, "13538227451", "会员A")
-        balance_b_after = get_member_balance(api_client, token, "13538506002", "会员B")
+        balance_a_after = get_member_balance(api_client, token, "13538506002", "会员A")
+        balance_b_after = get_member_balance(api_client, token, "19928710361", "会员B")
         deducted_a = round(balance_a_before - balance_a_after, 2) if balance_a_after is not None else 0
         deducted_b = round(balance_b_before - balance_b_after, 2) if balance_b_after is not None else 0
         total_deducted = round(deducted_a + deducted_b, 2)
