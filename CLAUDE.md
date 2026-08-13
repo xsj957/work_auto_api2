@@ -242,3 +242,61 @@ teardown 顺序（pytest 自动逆序清理）：desk → fee → region
 - 新增环境：在 `environments` 下添加对应 key，再在 `env` 字段引用即可；若 `env` 引用了不存在的 key，启动时会抛 `ValueError`
 - 业务数据（登录账号、门店号、桌台 ID 等）在 `environments[env].business_data` 中配置
 - 通知渠道通过 `notification_type` 控制（0=关闭, 1=钉钉, 2=微信, 3=邮件, 4=飞书）
+
+## 业务模块概览
+
+**需要详细业务规则时 @ 对应文档：**
+
+| 模块 | 文档路径 |
+|------|----------|
+| 支付规则 | `@docs/business/payment_rules.md` |
+| 优惠券规则（含组合场景） | `@docs/business/coupon_rules.md` |
+| 会员管理 | `@docs/business/member_rules.md` |
+| 桌台管理 | `@docs/business/desk_management_rules.md` |
+| 灯光控制 | `@docs/business/lighting_control_rules.md` |
+
+### 支付方式
+
+系统支持 6 种支付方式，分为 3 大类：
+- **线下收款**（系统不追踪）：`cash` 现金、`wx_offline` 微信线下扫码
+- **拉卡拉支付**（系统集成）：线下二维码、线上小程序微信支付
+- **余额支付**（会员账户）：`czk` 储值卡/通用卡、`tfk` 台费卡
+
+详见 → `@docs/business/payment_rules.md`
+
+### 桌台管理系统
+
+资源层级：**区域 → 台费 → 桌台**
+
+- 区域管理、台费管理、桌台管理（状态：空闲 → 使用中 → 已结账）
+- 动态命名：`{前缀}_{时分秒}{1位随机}{worker}`，桌台名称上限 15 字
+
+详见 → `@docs/business/desk_management_rules.md`
+
+### 灯光控制系统
+
+- 计时开台 → 手动卡钟 → 计时关台
+- 暂停/恢复、转台、并台、小程序控制、待客状态
+
+详见 → `@docs/business/lighting_control_rules.md`
+
+### 订单管理
+
+- 开台订单 → 订单状态流转 → 子订单 → 台费计算
+- 状态：空闲 → 开台 → 计费中 → 结账 → 已支付 → 完成
+
+### 会员管理
+
+- 会员信息：ID、姓名、手机号、等级、余额（通用卡 + 台费卡）
+- 操作：详情、储值、发券、调余额、黑名单、新增、修改等级、导入
+
+详见 → `@docs/business/member_rules.md`
+
+### 优惠券管理
+
+- 类型：满减券、现金券、折扣券
+- 配置：基本信息、使用设置（用券时间/可用日期/有效期）、适用范围、库存
+- 状态：开启 / 关闭
+- 操作：新增、启用、停用、删除、发放
+
+详见 → `@docs/business/coupon_rules.md`
