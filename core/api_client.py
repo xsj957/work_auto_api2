@@ -298,7 +298,7 @@ class APIClient:
                         biz_path = biz_path[len(prefix):]
                         break
                 if biz_path not in _SHORT_LOG_PATHS:
-                    self.log.info(f"[{step_name}] data={json.dumps(api_response.raw_response.get('data'), ensure_ascii=False)}")
+                    self.log.info(f"[{step_name}] data={json.dumps(api_response.raw_response.get('data'), ensure_ascii=False, indent=2)}")
 
                 # Allure 附件：响应数据
                 if HAS_ALLURE and step_name:

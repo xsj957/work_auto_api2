@@ -323,7 +323,7 @@ def verify_desk_idle(api_client, token, name):
 #  清理函数
 # ================================================================
 
-def cleanup_desk(api_client, token, desk_id):
+def cleanup_desk(api_client, token, desk_id, strict=False):
     """删除桌台"""
     if not desk_id:
         return
@@ -332,14 +332,14 @@ def cleanup_desk(api_client, token, desk_id):
         api_client.post(
             "/merchant-api/store/desk/del",
             {"ids": [desk_id]},
-            token=token, step_name="删除测试桌台", strict=False
+            token=token, step_name="删除测试桌台", strict=strict
         )
         info(f"      桌台已删除")
     except Exception as e:
         info(f"      清理桌台失败: {e}")
 
 
-def cleanup_fee(api_client, token, fee_id):
+def cleanup_fee(api_client, token, fee_id, strict=False):
     """删除台费"""
     if not fee_id:
         return
@@ -348,14 +348,14 @@ def cleanup_fee(api_client, token, fee_id):
         api_client.post(
             "/merchant-api/store/desk/fee/del",
             {"ids": [fee_id]},
-            token=token, step_name="删除测试台费", strict=False
+            token=token, step_name="删除测试台费", strict=strict
         )
         info(f"      台费已删除")
     except Exception as e:
         info(f"      清理台费失败: {e}")
 
 
-def cleanup_region(api_client, token, region_id):
+def cleanup_region(api_client, token, region_id, strict=False):
     """删除区域"""
     if not region_id:
         return
@@ -364,7 +364,7 @@ def cleanup_region(api_client, token, region_id):
         api_client.post(
             "/merchant-api/store/desk/region/del",
             {"ids": [region_id]},
-            token=token, step_name="删除测试区域", strict=False
+            token=token, step_name="删除测试区域", strict=strict
         )
         info(f"      区域已删除")
     except Exception as e:
