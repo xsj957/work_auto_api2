@@ -124,8 +124,17 @@ def _parse_test_results(stdout, junitxml_path=None):
                 classname = tc.get("classname", "")
                 duration = float(tc.get("time", 0))
                 # 检查是否有失败/错误子节点
-                failed = tc.find("failure") is not None or tc.find("error") is not None
+                failed_elem = tc.find("failure")
+                error_elem = tc.find("error")
                 skipped = tc.find("skipped") is not None
+                failed = failed_elem is not None or error_elem is not None
+
+                # 提取失败原因
+                failure_reason = ""
+                if failed_elem is not None:
+                    failure_reason = (failed_elem.get("message", "") + "\n" + (failed_elem.text or "")).strip()
+                elif error_elem is not None:
+                    failure_reason = (error_elem.get("message", "") + "\n" + (error_elem.text or "")).strip()
 
                 # 简化名称：去掉模块路径，只保留 test_xxx[param]
                 short_name = name
@@ -135,6 +144,7 @@ def _parse_test_results(stdout, junitxml_path=None):
                     "passed": not failed and not skipped,
                     "status": "SKIPPED" if skipped else ("FAILED" if failed else "PASSED"),
                     "duration": duration,
+                    "failure_reason": failure_reason,
                 })
             if tests:
                 return tests
@@ -158,6 +168,7 @@ def _parse_test_results(stdout, junitxml_path=None):
                     "passed": status == "PASSED",
                     "status": status,
                     "duration": 0.0,
+                    "failure_reason": "",
                 })
             continue
 
@@ -172,6 +183,7 @@ def _parse_test_results(stdout, junitxml_path=None):
             "passed": status == "PASSED",
             "status": status,
             "duration": duration,
+            "failure_reason": "",
         })
 
     return tests

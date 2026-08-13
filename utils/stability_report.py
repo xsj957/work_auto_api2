@@ -11,7 +11,43 @@
 
 import json
 import os
+import re
 from datetime import datetime
+
+
+# ================================================================
+#  测试用例英文 → 中文名称映射
+# ================================================================
+TEST_NAME_CN = {
+    "test_clock_calorie_flow": "计时开台+卡钟测试",
+    "test_miniprogram_flow": "小程序开台测试",
+    "test_aa_golfer_workflow": "追加会员+AA结账测试",
+    "test_combine_workflow": "并台流程测试",
+    "test_turn_workflow": "转台流程测试",
+    "test_pause_workflow": "暂停流程测试",
+    "test_pending_workflow": "挂单流程测试",
+    "test_recover_desk": "恢复关台测试",
+    "test_recover_workflow": "恢复流程测试",
+    "test_region_light_on": "区域全开灯测试",
+    "test_region_light_off": "区域全关灯测试",
+    "test_temp_light": "临时灯控测试",
+}
+
+
+def cn_test_name(raw_name):
+    """
+    将英文测试名转为中文
+
+    支持参数化后缀：test_temp_light[temp_light_001] → 临时灯控测试 [temp_light_001]
+    未命中映射时保留原名
+    """
+    m = re.match(r"^(\w+?)(\[.*\])?$", raw_name)
+    if not m:
+        return raw_name
+    base = m.group(1)
+    suffix = m.group(2) or ""
+    cn = TEST_NAME_CN.get(base, base)
+    return f"{cn} {suffix}" if suffix else cn
 
 
 def generate_html_report(rounds_data, output_path, detail_rounds=10):
@@ -194,7 +230,7 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
         }}
         .collapsible:hover {{ background: #e9ecef; }}
         .collapsible::before {{
-            content: '▶ ';
+            content: '\\25B6 ';
             display: inline-block;
             transition: transform 0.2s;
         }}
@@ -206,6 +242,43 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
             padding: 12px 0;
         }}
         .collapse-content.show {{ display: block; }}
+        .test-card {{
+            margin-bottom: 16px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            overflow: hidden;
+        }}
+        .test-card-header {{
+            padding: 10px 14px;
+            background: #f8f9fa;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .test-card-header:hover {{ background: #e9ecef; }}
+        .test-card-header::before {{
+            content: '\\25B6 ';
+            display: inline-block;
+            transition: transform 0.2s;
+            font-size: 10px;
+        }}
+        .test-card-header.active::before {{
+            transform: rotate(90deg);
+        }}
+        .failure-reason {{
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 8px 12px;
+            margin: 8px 14px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Consolas', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+        }}
         .footer {{
             text-align: center;
             padding: 20px;
@@ -279,21 +352,35 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
             <div class="round-body">
 """
 
-        # 测试结果
+        # ── 测试结果表格（含失败原因列）──
         html += """
                 <div class="section">
                     <h3>测试结果</h3>
                     <table>
-                        <tr><th>测试用例</th><th>状态</th><th>耗时</th></tr>
+                        <tr><th>测试用例</th><th>状态</th><th>耗时</th><th>失败原因</th></tr>
 """
         for t in tests:
             t_badge = '<span class="badge badge-pass">PASS</span>' if t.get("passed") else '<span class="badge badge-fail">FAIL</span>'
             t_duration = f"{t.get('duration', 0):.2f}s"
+            cn_name = cn_test_name(t.get('name', 'N/A'))
+            # 失败原因：优先 failure_reason（pytest断言），其次 db_assertion.message
+            failure_reason = t.get("failure_reason", "")
+            if not failure_reason and not t.get("passed"):
+                db_msg = db_assertion.get("message", "")
+                if db_msg:
+                    failure_reason = db_msg
+            # 截断过长的失败原因
+            reason_display = ""
+            if failure_reason:
+                lines = failure_reason.strip().split("\n")
+                # 取最后几行（通常是实际断言失败信息）
+                reason_display = "\n".join(lines[-5:])[:300]
             html += f"""
                         <tr>
-                            <td>{t.get('name', 'N/A')}</td>
+                            <td>{cn_name}</td>
                             <td>{t_badge}</td>
                             <td>{t_duration}</td>
+                            <td style="color:#e74c3c;font-size:12px;max-width:400px;white-space:pre-wrap;word-break:break-all;">{_escape_html(reason_display)}</td>
                         </tr>
 """
         html += """
@@ -315,25 +402,40 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
                     </h3>
                     <div class="collapse-content show">
 """
-        for t in tests:
-            api_calls = t.get("api_calls", [])
-            t_passed = t.get("passed", False)
-            t_badge = '<span class="badge badge-pass">PASS</span>' if t_passed else '<span class="badge badge-fail">FAIL</span>'
-            t_duration = f"{t.get('duration', 0):.2f}s"
+            # ── 所有测试用例卡片（循环内只关闭卡片，不关闭板块）──
+            for t in tests:
+                api_calls = t.get("api_calls", [])
+                t_passed = t.get("passed", False)
+                t_badge = '<span class="badge badge-pass">PASS</span>' if t_passed else '<span class="badge badge-fail">FAIL</span>'
+                t_duration = f"{t.get('duration', 0):.2f}s"
+                cn_name = cn_test_name(t.get('name', 'N/A'))
 
-            html += f"""
-                        <div style="margin-bottom: 16px; border: 1px solid #e9ecef; border-radius: 8px; overflow: hidden;">
-                            <div class="collapsible" style="padding: 10px 14px; background: #f8f9fa; cursor: pointer;"
+                # 失败原因（卡片内展示）
+                failure_reason = t.get("failure_reason", "")
+                if not failure_reason and not t_passed:
+                    db_msg = db_assertion.get("message", "")
+                    if db_msg:
+                        failure_reason = db_msg
+
+                html += f"""
+                        <div class="test-card">
+                            <div class="test-card-header"
                                  onclick="this.classList.toggle('active');this.nextElementSibling.classList.toggle('show')">
-                                <strong>{t.get('name', 'N/A')}</strong>
-                                &nbsp; {t_badge}
-                                &nbsp; <span style="color:#888;font-size:12px">{t_duration}</span>
-                                &nbsp; <span style="color:#888;font-size:12px">({len(api_calls)} 条 API)</span>
+                                <strong>{cn_name}</strong>
+                                {t_badge}
+                                <span style="color:#888;font-size:12px">{t_duration}</span>
+                                <span style="color:#888;font-size:12px">({len(api_calls)} 条 API)</span>
                             </div>
-                            <div class="collapse-content show" style="padding: 0;">
+                            <div class="collapse-content" style="padding: 0;">
 """
-            if api_calls:
-                html += """
+                # 失败原因区块
+                if failure_reason:
+                    html += f"""
+                                <div class="failure-reason">{_escape_html(failure_reason.strip()[:500])}</div>
+"""
+
+                if api_calls:
+                    html += """
                                 <table>
                                     <tr>
                                         <th>时间</th>
@@ -345,39 +447,40 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
                                         <th>状态</th>
                                     </tr>
 """
-                for r in api_calls:
-                    status_badge = '<span class="badge badge-pass">成功</span>' if r.get("is_success") else '<span class="badge badge-fail">失败</span>'
-                    params_json = json.dumps(r.get("body", r.get("params", {})), ensure_ascii=False, indent=2)[:500]
-                    # 响应：优先 response_body，否则显示 code + msg
-                    resp_body = r.get("response_body")
-                    if resp_body:
-                        response = str(resp_body)[:200]
-                    else:
-                        code = r.get("result_code", "")
-                        msg = r.get("result_msg", "")
-                        response = f"code={code}, msg={msg}" if code else "-"
-                    op_name = r.get("operate_name", "") or r.get("url", "").rsplit("/", 1)[-1]
+                    for r in api_calls:
+                        status_badge = '<span class="badge badge-pass">成功</span>' if r.get("is_success") else '<span class="badge badge-fail">失败</span>'
+                        params_json = json.dumps(r.get("body", r.get("params", {})), ensure_ascii=False, indent=2)[:500]
+                        # 响应：优先 response_body，否则显示 code + msg
+                        resp_body = r.get("response_body")
+                        if resp_body:
+                            response = str(resp_body)[:200]
+                        else:
+                            code = r.get("result_code", "")
+                            msg = r.get("result_msg", "")
+                            response = f"code={code}, msg={msg}" if code else "-"
+                        op_name = r.get("operate_name", "") or r.get("url", "").rsplit("/", 1)[-1]
 
-                    html += f"""
+                        html += f"""
                                     <tr>
                                         <td style="white-space:nowrap">{r.get('create_time', '')}</td>
                                         <td>{op_name}</td>
                                         <td style="font-family:monospace;font-size:11px">{r.get('url', '')}</td>
-                                        <td><div class="params">{params_json}</div></td>
-                                        <td><div class="params">{str(response)[:200]}</div></td>
+                                        <td><div class="params">{_escape_html(params_json)}</div></td>
+                                        <td><div class="params">{_escape_html(str(response)[:200])}</div></td>
                                         <td>{r.get('duration_ms', 0)}ms</td>
                                         <td>{status_badge}</td>
                                     </tr>
 """
-                html += "                                </table>"
-            else:
-                html += '<p style="color:#999;padding:8px 14px">无 API 调用记录</p>'
+                    html += "                                </table>"
+                else:
+                    html += '<p style="color:#999;padding:8px 14px">无 API 调用记录</p>'
 
-            html += """
+                # 只关闭单个测试卡片
+                html += """
                             </div>
                         </div>
 """
-
+            # ── 循环结束后关闭板块 ──
             html += """
                     </div>
                 </div>
@@ -495,8 +598,8 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
     </div>
 
     <script>
-        // 默认展开所有轮次的 API 明细
-        document.querySelectorAll('.collapsible').forEach(el => {{
+        // 默认只展开轮次板块，测试卡片默认折叠（用户手动点击展开）
+        document.querySelectorAll('.section > .collapsible').forEach(el => {{
             el.classList.add('active');
             el.nextElementSibling.classList.add('show');
         }});
@@ -512,3 +615,15 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
         f.write(html)
 
     return output_path
+
+
+def _escape_html(text):
+    """转义 HTML 特殊字符，防止 JSON 内容破坏页面结构"""
+    if not text:
+        return ""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )

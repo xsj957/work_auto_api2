@@ -63,12 +63,12 @@ IS_RESERVE = _pt['desk'].get('is_reserve', 0)
 ACTIVE_KEY = _pt['desk'].get('active_key', 1)
 CAN_BALANCE = _pt['desk'].get('can_balance', 1)
 
-# 轮询配置
+# 轮询配置（稳定性测试连续执行时服务端同步较慢，需要更长等待）
 _POLL_CFG = _pt.get('polling', {})
-POLL_INITIAL_WAIT = _POLL_CFG.get('initial_wait', 5)
+POLL_INITIAL_WAIT = _POLL_CFG.get('initial_wait', 8)
 POLL_INTERVAL = _POLL_CFG.get('interval', 3)
-POLL_MAX_ATTEMPTS = _POLL_CFG.get('max_attempts', 5)
-POLL_TIMEOUT = _POLL_CFG.get('timeout', 20)
+POLL_MAX_ATTEMPTS = _POLL_CFG.get('max_attempts', 8)
+POLL_TIMEOUT = _POLL_CFG.get('timeout', 35)
 
 
 # ================================================================
@@ -295,6 +295,8 @@ def verify_desk_idle(api_client, token, name):
         "filter": {"storeNo": STORE_NO, "deskName": name},
         "storeNo": STORE_NO,
         "statusList": [1, 2, 3, 5],
+        "pageNo": 1,
+        "pageSize": 50,
     }
 
     def _query():
