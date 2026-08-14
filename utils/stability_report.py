@@ -463,7 +463,7 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
                         html += f"""
                                     <tr>
                                         <td style="white-space:nowrap">{r.get('create_time', '')}</td>
-                                        <td>{op_name}</td>
+                                        <td>{_escape_html(str(op_name))}</td>
                                         <td style="font-family:monospace;font-size:11px">{r.get('url', '')}</td>
                                         <td><div class="params">{_escape_html(params_json)}</div></td>
                                         <td><div class="params">{_escape_html(str(response)[:200])}</div></td>
@@ -506,7 +506,7 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
                 <div class="section">
                     <h3>灯控数据库断言</h3>
                     <div class="assertion-box {assertion_class}">
-                        {assertion_msg}
+                        {_escape_html(assertion_msg)}
                     </div>
 """
 
@@ -543,7 +543,7 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
                 for op, stats in by_op.items():
                     html += f"""
                         <tr>
-                            <td>{op}</td>
+                            <td>{_escape_html(str(op))}</td>
                             <td>{stats['total']}</td>
                             <td class="pass">{stats['success']}</td>
                         </tr>
@@ -573,9 +573,9 @@ def generate_html_report(rounds_data, output_path, detail_rounds=10):
                 html += f"""
                         <tr>
                             <td style="white-space:nowrap">{r.get('create_time', '')}</td>
-                            <td><strong>{push_desc}</strong></td>
+                            <td><strong>{_escape_html(str(push_desc))}</strong></td>
                             <td style="font-family:monospace;font-size:11px">{r.get('url', '')}</td>
-                            <td>{device_id}</td>
+                            <td>{_escape_html(str(device_id))}</td>
                             <td>{r.get('duration_ms', 0)}ms</td>
                             <td>{status_badge}</td>
                         </tr>

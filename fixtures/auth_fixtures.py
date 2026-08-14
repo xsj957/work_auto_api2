@@ -17,19 +17,9 @@ import time
 import pytest
 from utils.config import config
 from utils.log_control import WARNING
+from utils.cache import get_cache, update_cache
 from core.api_client import APIClient
 from core.context import TestContext
-
-# 简化的缓存实现（内存缓存）
-_cache = {}
-
-def get_cache(key: str, default: str = "") -> str:
-    """获取缓存值"""
-    return _cache.get(key, default)
-
-def update_cache(key: str, value: str):
-    """更新缓存"""
-    _cache[key] = value
 
 
 @pytest.fixture(scope="session")
@@ -88,8 +78,11 @@ def auth_token(api_client) -> str:
             if not token:
                 raise RuntimeError(f"登录失败: 未获取到 accessToken (code={response.code}, msg={response.msg})")
 
-            # 缓存 Token
+            # 缓存 Token 和 merchantNo
             update_cache("merchant_token", token)
+            merchant_no = response.get_data("merchantNo", "")
+            if merchant_no:
+                update_cache("merchantNoZM", merchant_no)
             return token
 
         except Exception as e:
@@ -103,40 +96,15 @@ def auth_token(api_client) -> str:
 
 
 @pytest.fixture(scope="session")
-def merchant_no(api_client, auth_token) -> str:
+def merchant_no(auth_token) -> str:
     """
     商户编号（会话级）
 
-    从登录响应或缓存中获取。
-
-    使用示例：
-        def test_something(merchant_no):
-            data = {"merchantNo": merchant_no}
+    从登录响应的缓存中获取（auth_token 登录时已缓存 merchantNo）。
     """
-    # 尝试从缓存获取
     merchant_no = get_cache("merchantNoZM", "")
-    if merchant_no:
-        return merchant_no
-
-    # 从配置获取
-    merchant_no = config.business_data.get("merchantNo", "")
     if not merchant_no:
-        # 尝试从登录响应获取
-        response = api_client.post(
-            "/merchant-api/system/auth/login",
-            {
-                "username": config.business_data['login']['username'],
-                "password": config.business_data['login']['password']
-            },
-            token=auth_token,
-            step_name="获取商户信息"
-        )
-        merchant_no = response.get_data("merchantNo")
-
-    # 缓存商户编号
-    if merchant_no:
-        update_cache("merchantNoZM", merchant_no)
-
+        merchant_no = config.business_data.get("merchantNo", "")
     return merchant_no
 
 

@@ -14,6 +14,7 @@
 """
 
 # 1. 标准库
+import contextlib
 import json
 import time
 import warnings
@@ -31,6 +32,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 # 3. 项目模块
 from utils.log_control import INFO, ERROR, WARNING
 from utils.config import config
+from utils.cache import get_cache, update_cache
 
 # 尝试导入 allure（可选）
 try:
@@ -219,7 +221,6 @@ class APIClient:
         # 使用 allure.step context manager 展示步骤
         # 注：allure 的 SafeFormatter 会对模板变量加 repr() 引号，
         # 所以改为 context manager 方式直接传完整字符串
-        import contextlib
         if HAS_ALLURE and step_name:
             _step_cm = allure.step(f"{step_name} | {method} {path}")
         else:
@@ -351,10 +352,10 @@ def api_post(path: str, body: dict, token: Optional[str] = None,
 
     推荐使用 APIClient 类。
     """
-    client = APIClient()
-    response = client.post(path, data=body, token=token, step_name=step_name,
-                          expect_code=expect_code, timeout=timeout, strict=strict)
-    return response.raw_response
+    with APIClient() as client:
+        response = client.post(path, data=body, token=token, step_name=step_name,
+                              expect_code=expect_code, timeout=timeout, strict=strict)
+        return response.raw_response
 
 
 def api_get(path: str, params: Optional[dict] = None, token: Optional[str] = None,
@@ -364,10 +365,10 @@ def api_get(path: str, params: Optional[dict] = None, token: Optional[str] = Non
 
     推荐使用 APIClient 类。
     """
-    client = APIClient()
-    response = client.get(path, params=params, token=token, step_name=step_name,
-                         timeout=timeout)
-    return response.raw_response
+    with APIClient() as client:
+        response = client.get(path, params=params, token=token, step_name=step_name,
+                             timeout=timeout)
+        return response.raw_response
 
 
 # ================================================================
@@ -382,36 +383,21 @@ def find_by_name(item_list: list, name_field: str, target_name: str) -> Optional
     return None
 
 
-def get_cache_value(cache_name: str, default: Any = None) -> Any:
-    """获取缓存值（从内存缓存）"""
-    # 使用简单的内存缓存
-    if not hasattr(get_cache_value, '_cache'):
-        get_cache_value._cache = {}
-    return get_cache_value._cache.get(cache_name, default)
-
-
-def update_cache_value(cache_name: str, value: Any):
-    """更新缓存值"""
-    if not hasattr(update_cache_value, '_cache'):
-        update_cache_value._cache = {}
-    update_cache_value._cache[cache_name] = value
-
-
 def get_store_no() -> str:
     """获取门店编号"""
-    return get_cache_value("storeNo", "")
+    return get_cache("storeNo", "")
 
 
 def get_merchant_no() -> str:
     """获取商户编号"""
-    return get_cache_value("merchantNoZM", "")
+    return get_cache("merchantNoZM", "")
 
 
 def get_user_no() -> str:
     """获取用户编号"""
-    return get_cache_value("userNoZM", "")
+    return get_cache("userNoZM", "")
 
 
 def get_token() -> str:
     """获取登录 token"""
-    return get_cache_value("merchant_token", "")
+    return get_cache("merchant_token", "")

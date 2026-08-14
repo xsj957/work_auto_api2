@@ -43,7 +43,7 @@ def test_aa_golfer_workflow(api_client, auth_context, lighting_resources):
     desk_no = lighting_resources['desk_no']
 
     # 查询两个会员
-    golfer_phones = config.business_data.get('golferPhones', ['13538506002', '13538227451'])
+    golfer_phones = config.business_data.get('golferPhones', ['13538506002', '19928710361'])
     golfer_nos = []
     for phone in golfer_phones:
         golfer_no = get_golfer_no(api_client, token, phone)
@@ -83,7 +83,7 @@ def test_aa_golfer_workflow(api_client, auth_context, lighting_resources):
             "close": True,
             "orderNo": order_no,
             "filter": {"storeNo": store_no},
-            "userNo": "MU202606171016150897"
+            "userNo": config.business_data.get("userNo", "")
         },
         token, f"AA结账-{','.join(golfer_nos)}"
     )

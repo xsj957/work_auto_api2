@@ -111,7 +111,7 @@ def capture_failure(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except AssertionError as e:
+        except Exception as e:
             test_name = func.__name__
             failure_capture.capture(
                 test_name=test_name,

@@ -126,7 +126,7 @@ def checkout_and_calc(api_client, token, order_no, golfer_no=None):
     info(f"  结账（closeDesk, close=false）... orderNo={order_no}")
     response = close_desk(api_client, token, order_no, close=False)
     data = response.get_data()
-    child_order_no = data if not isinstance(data, dict) else data
+    child_order_no = data.get("orderNo", data) if isinstance(data, dict) else data
     if not child_order_no:
         child_order_no = order_no
     info(f"      结账成功! 子订单号={child_order_no}")

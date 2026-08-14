@@ -17,6 +17,7 @@
 # 1. 标准库
 import time
 import functools
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Callable, Any, Optional
 
 # 2. 项目模块
@@ -183,6 +184,7 @@ def timeout(seconds: float) -> Callable:
     超时装饰器
 
     如果函数执行时间超过指定秒数，抛出 TimeoutError。
+    使用 ThreadPoolExecutor 实现，兼容 Windows 和 Linux。
 
     Args:
         seconds: 超时时间（秒）
@@ -195,29 +197,18 @@ def timeout(seconds: float) -> Callable:
         def test_slow_api(self):
             # 如果超过 10 秒，抛出 TimeoutError
             ...
-
-    注意：这个装饰器使用信号机制，只在主线程中有效。
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
-            import signal
-
-            def timeout_handler(signum, frame):
-                raise TimeoutError(f"{func.__name__} 执行超时 ({seconds}秒)")
-
-            # 设置信号处理器
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(int(seconds))
-
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                # 恢复原来的处理器
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-
-            return result
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(func, *args, **kwargs)
+                try:
+                    return future.result(timeout=seconds)
+                except FuturesTimeoutError:
+                    raise TimeoutError(
+                        f"{func.__name__} 执行超时 ({seconds}秒)"
+                    )
 
         return wrapper
     return decorator

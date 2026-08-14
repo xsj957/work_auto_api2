@@ -54,18 +54,24 @@ def lighting_resources(api_client, auth_context):
     from utils.debug_utils import info
 
     token = auth_context.token
+    resources = None
 
-    # ── 前置：创建资源 ──
-    info("  [灯光资源] 开始创建区域→台费→桌台...")
-    resources = create_test_resources(api_client, token)
-    info(f"  [灯光资源] 创建完成: desk_no={resources['desk_no']}")
+    try:
+        # ── 前置：创建资源 ──
+        info("  [灯光资源] 开始创建区域→台费→桌台...")
+        resources = create_test_resources(api_client, token)
+        info(f"  [灯光资源] 创建完成: desk_no={resources['desk_no']}")
 
-    yield resources
-
-    # ── 后置：清理资源 ──
-    info("  [灯光资源] 开始清理资源...")
-    cleanup_test_resources(api_client, token, resources)
-    info("  [灯光资源] 清理完成")
+        yield resources
+    finally:
+        # ── 后置：清理资源（即使创建失败也尝试清理已创建的部分）──
+        if resources:
+            info("  [灯光资源] 开始清理资源...")
+            try:
+                cleanup_test_resources(api_client, token, resources)
+            except Exception as e:
+                info(f"  [灯光资源] 清理失败: {e}")
+            info("  [灯光资源] 清理完成")
 
 
 # ================================================================
@@ -94,15 +100,21 @@ def lighting_resources_2(api_client, auth_context):
     from utils.debug_utils import info
 
     token = auth_context.token
+    resources = None
 
-    # ── 前置：创建资源 ──
-    info("  [灯光资源] 开始创建区域→台费→双桌台...")
-    resources = create_test_resources_2(api_client, token)
-    info(f"  [灯光资源] 创建完成: desk1={resources['desk1_no']}, desk2={resources['desk2_no']}")
+    try:
+        # ── 前置：创建资源 ──
+        info("  [灯光资源] 开始创建区域→台费→双桌台...")
+        resources = create_test_resources_2(api_client, token)
+        info(f"  [灯光资源] 创建完成: desk1={resources['desk1_no']}, desk2={resources['desk2_no']}")
 
-    yield resources
-
-    # ── 后置：清理资源 ──
-    info("  [灯光资源] 开始清理资源...")
-    cleanup_test_resources(api_client, token, resources)
-    info("  [灯光资源] 清理完成")
+        yield resources
+    finally:
+        # ── 后置：清理资源（即使创建失败也尝试清理已创建的部分）──
+        if resources:
+            info("  [灯光资源] 开始清理资源...")
+            try:
+                cleanup_test_resources(api_client, token, resources)
+            except Exception as e:
+                info(f"  [灯光资源] 清理失败: {e}")
+            info("  [灯光资源] 清理完成")

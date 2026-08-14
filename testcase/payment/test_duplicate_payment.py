@@ -14,11 +14,8 @@
 """
 
 import json
-import os
-import random
-import time
 import multiprocessing
-from datetime import datetime
+import time
 
 import pytest
 import requests as http_requests
@@ -36,6 +33,7 @@ from utils.payment_helpers import (
 )
 from utils.debug_utils import info, capture_failure
 from utils.markers import mark_priority
+from utils.test_helpers import _gen_suffix, cleanup_desk, cleanup_fee, cleanup_region
 
 
 # ============================================================
@@ -94,17 +92,20 @@ def _cancel_worker(url_cancel, payload, headers, fire, result_queue):
 #  公共辅助函数
 # ============================================================
 
-_case_counter = 0
+
+def _cleanup_resources(api_client, token, region_id, fee_id, desk_id):
+    """统一清理测试资源"""
+    info("  清理测试资源...")
+    cleanup_desk(api_client, token, desk_id, strict=False)
+    cleanup_fee(api_client, token, fee_id, strict=False)
+    cleanup_region(api_client, token, region_id, strict=False)
+    info("  资源清理完成!")
 
 
 def _setup_ready_to_pay(api_client, auth_context):
     """公共前置：创建完整环境并结账就绪。返回 (token, merchant_no, golfer_no, child_order_no, total_amount, region_id, fee_id, desk_id)"""
-    global _case_counter
-    _case_counter += 1
-
-    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")[-1]
-    suffix = datetime.now().strftime("%H%M%S") + str(random.randint(10, 99)) + worker
-    tag = f"{suffix}_{_case_counter}"
+    suffix = _gen_suffix()
+    tag = f"_{suffix}"
     region_name = f"测试区{tag}"
     fee_name = f"测试费{tag}"
     desk_name = f"测试桌台{tag}"
@@ -123,8 +124,9 @@ def _setup_ready_to_pay(api_client, auth_context):
     desk_no, desk_id = verify_desk(api_client, token, name=desk_name)
     verify_desk_idle(api_client, token, name=desk_name)
 
-    # 绑定会员并开台
-    golfer_no = find_and_bind_member(api_client, token, desk_no, "13538506002")
+    # 从配置读取会员手机号
+    member_phone = config.business_data.get("golferPhones", ["13538506002"])[0]
+    golfer_no = find_and_bind_member(api_client, token, desk_no, member_phone)
     order_no = open_desk(api_client, token, desk_no)
     child_order_no, total_amount = checkout_and_calc(api_client, token, order_no, golfer_no)
 
@@ -210,13 +212,7 @@ def _do_concurrent_submit(api_client, auth_context, channel_code="czk"):
         verify_no_duplicate(api_client, token, child_order_no, total_amount)
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)
 
 
 def _verify_two_golfers(api_client, token, child_order_no):
@@ -240,6 +236,90 @@ def _verify_two_golfers(api_client, token, child_order_no):
         info(f"       ⚠️ 支付记录异常: {success_count}笔成功支付")
     else:
         info(f"      ✓ 支付记录正常: {success_count}笔成功")
+
+
+def _setup_two_golfers(api_client, auth_context):
+    """
+    双会员前置：创建资源 + 查询两个会员 + 绑定到桌台 + 开台 + 结账。
+    返回 dict: golfer_a, golfer_b, golfer_no_a, golfer_no_b, child_order_no,
+               total_amount, desk_no, region_id, fee_id, desk_id,
+               balance_a_before, balance_b_before, golfer_a_info, golfer_b_info
+    """
+    suffix = _gen_suffix()
+    tag = f"_{suffix}"
+    region_name = f"测试区{tag}"
+    fee_name = f"测试费{tag}"
+    desk_name = f"测试桌台{tag}"
+
+    token = auth_context.token
+    merchant_no = auth_context.merchant_no
+
+    # 创建资源
+    region_id = create_region(api_client, token, merchant_no, name=region_name)
+    region_no = verify_region(api_client, token, name=region_name)
+    create_fee(api_client, token, merchant_no, name=fee_name)
+    fee_no, fee_id = verify_fee(api_client, token, name=fee_name)
+    create_desk(api_client, token, region_no, fee_no, fee_name, desk_name=desk_name)
+    desk_no, desk_id = verify_desk(api_client, token, name=desk_name)
+    verify_desk_idle(api_client, token, name=desk_name)
+
+    # 查询两个会员（从配置读取手机号）
+    phones = config.business_data.get("golferPhones", ["13538506002"])
+    if len(phones) < 2:
+        raise FlowError(f"config.yaml golferPhones 需至少2个手机号，当前只有{len(phones)}个")
+
+    golfer_info = {}
+    for phone in phones[:2]:
+        response = api_client.post(
+            "/merchant-api/store/golfer/pageV2",
+            {"storeNo": STORE_NO, "pageNo": 1, "pageSize": 10,
+             "searchName": phone, "filter": {"storeNo": STORE_NO}},
+            token, f"查询会员{phone}"
+        )
+        g_list = response.get_data("list", default=[])
+        if not g_list:
+            raise FlowError(f"未找到手机号={phone}的会员")
+        g = g_list[0]
+        golfer_info[phone] = {
+            "golferNo": g.get("golferNo"),
+            "name": g.get("golferName"),
+            "balance_before": g.get("totalBalance", 0),
+        }
+        info(f"  会员{phone}: golferNo={g.get('golferNo')}, "
+             f"姓名={g.get('golferName')}, 初始余额={g.get('totalBalance', 0)}元")
+
+    phone_a, phone_b = phones[0], phones[1]
+    golfer_no_a = golfer_info[phone_a]["golferNo"]
+    golfer_no_b = golfer_info[phone_b]["golferNo"]
+
+    # 绑定两个会员到桌台
+    api_client.post(
+        "/merchant-api/store/desk/addGolfer",
+        {"deskNo": desk_no, "golferNoList": [golfer_no_a, golfer_no_b],
+         "filter": {"storeNo": STORE_NO}},
+        token, "绑定两个会员"
+    )
+    info(f"  两个会员已绑定到桌台: [{golfer_no_a}, {golfer_no_b}]")
+
+    # 开台 → 结账
+    order_no = open_desk(api_client, token, desk_no)
+    child_order_no, total_amount = checkout_and_calc(api_client, token, order_no, golfer_no_a)
+
+    return {
+        "token": token,
+        "golfer_no_a": golfer_no_a,
+        "golfer_no_b": golfer_no_b,
+        "child_order_no": child_order_no,
+        "total_amount": total_amount,
+        "desk_no": desk_no,
+        "region_id": region_id,
+        "fee_id": fee_id,
+        "desk_id": desk_id,
+        "balance_a_before": golfer_info[phone_a]["balance_before"],
+        "balance_b_before": golfer_info[phone_b]["balance_before"],
+        "golfer_a_info": golfer_info[phone_a],
+        "golfer_b_info": golfer_info[phone_b],
+    }
 
 
 # ============================================================
@@ -312,13 +392,7 @@ def test_01_concurrent_create(api_client, auth_context):
         verify_no_duplicate(api_client, token, child_order_no, total_amount)
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)
 
 
 # ============================================================
@@ -387,13 +461,7 @@ def test_03_create_after_paid(api_client, auth_context):
         verify_no_duplicate(api_client, token, child_order_no, total_amount)
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)
 
 
 # ============================================================
@@ -455,13 +523,7 @@ def test_04_rapid_submit(api_client, auth_context):
         verify_no_duplicate(api_client, token, child_order_no, total_amount)
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)
 
 
 # ============================================================
@@ -546,13 +608,7 @@ def test_05_create_during_checkout(api_client, auth_context):
         verify_no_duplicate(api_client, token, child_order_no_unused, total_amount)
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)
 
 
 # ============================================================
@@ -574,9 +630,12 @@ def test_06_two_golfers_pay_vs_cancel(api_client, auth_context):
     token, _, _, child_order_no, total_amount, region_id, fee_id, desk_id = _setup_ready_to_pay(api_client, auth_context)
 
     try:
-        # 查询两个会员
+        # 查询两个会员（从配置读取手机号）
+        phones = config.business_data.get("golferPhones", ["13538506002"])
+        if len(phones) < 2:
+            raise FlowError(f"config.yaml golferPhones 需至少2个手机号，当前只有{len(phones)}个")
         golfer_nos = []
-        for phone in ["15033666201", "13538506002"]:
+        for phone in phones[:2]:
             response = api_client.post(
                 "/merchant-api/store/golfer/pageV2",
                 {"storeNo": STORE_NO, "pageNo": 1, "pageSize": 10,
@@ -707,13 +766,7 @@ def test_06_two_golfers_pay_vs_cancel(api_client, auth_context):
         _verify_two_golfers(api_client, token, child_order_no)
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)
 
 
 # ============================================================
@@ -728,68 +781,23 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
     info("  用例7: 双会员高并发submit - 检测余额异常扣款")
     info("=" * 60)
 
-    global _case_counter
-    _case_counter += 1
+    ctx = _setup_two_golfers(api_client, auth_context)
+    token = ctx["token"]
+    golfer_no_a = ctx["golfer_no_a"]
+    child_order_no = ctx["child_order_no"]
+    total_amount = ctx["total_amount"]
+    region_id = ctx["region_id"]
+    fee_id = ctx["fee_id"]
+    desk_id = ctx["desk_id"]
+    balance_a_before = ctx["balance_a_before"]
+    balance_b_before = ctx["balance_b_before"]
+    phones = config.business_data.get("golferPhones", ["13538506002"])
+    phone_b = phones[1]
 
-    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")[-1]
-    suffix = datetime.now().strftime("%H%M%S") + str(random.randint(10, 99)) + worker
-    tag = f"{suffix}_{_case_counter}"
-    region_name = f"测试区{tag}"
-    fee_name = f"测试费{tag}"
-    desk_name = f"测试桌台{tag}"
-
-    token = auth_context.token
-    merchant_no = auth_context.merchant_no
-
-    # 创建环境
-    region_id = create_region(api_client, token, merchant_no, name=region_name)
-    region_no = verify_region(api_client, token, name=region_name)
-
-    create_fee(api_client, token, merchant_no, name=fee_name)
-    fee_no, fee_id = verify_fee(api_client, token, name=fee_name)
-
-    create_desk(api_client, token, region_no, fee_no, fee_name, desk_name=desk_name)
-    desk_no, desk_id = verify_desk(api_client, token, name=desk_name)
-    verify_desk_idle(api_client, token, name=desk_name)
+    info(f"  应付金额={total_amount}元")
+    info(f"  会员A初始余额={balance_a_before}元, 会员B初始余额={balance_b_before}元")
 
     try:
-        golfer_info = {}
-        for phone in ["19928710361", "13538506002"]:
-            response = api_client.post(
-                "/merchant-api/store/golfer/pageV2",
-                {"storeNo": STORE_NO, "pageNo": 1, "pageSize": 10,
-                 "searchName": phone, "filter": {"storeNo": STORE_NO}},
-                token, f"查询会员{phone}"
-            )
-            g_list = response.get_data("list", default=[])
-            if not g_list:
-                raise FlowError(f"未找到手机号={phone}的会员")
-            g = g_list[0]
-            golfer_info[phone] = {
-                "golferNo": g.get("golferNo"),
-                "name": g.get("golferName"),
-                "balance_before": g.get("totalBalance", 0),
-            }
-            info(f"  会员{phone}: golferNo={g.get('golferNo')}, "
-                  f"姓名={g.get('golferName')}, 初始余额={g.get('totalBalance', 0)}元")
-
-        golfer_no_list = [golfer_info[p]["golferNo"] for p in golfer_info]
-        api_client.post(
-            "/merchant-api/store/desk/addGolfer",
-            {"deskNo": desk_no, "golferNoList": golfer_no_list, "filter": {"storeNo": STORE_NO}},
-            token, "绑定两个会员"
-        )
-        info(f"  两个会员已绑定到桌台: {golfer_no_list}")
-
-        order_no = open_desk(api_client, token, desk_no)
-        child_order_no, total_amount = checkout_and_calc(api_client, token, order_no, golfer_no_list[0])
-
-        golfer_a = golfer_info["13538506002"]["golferNo"]
-        balance_a_before = golfer_info["13538506002"]["balance_before"]
-        balance_b_before = golfer_info["19928710361"]["balance_before"]
-
-        info(f"  应付金额={total_amount}元")
-        info(f"  会员A初始余额={balance_a_before}元, 会员B初始余额={balance_b_before}元")
 
         base_url = config.host + "/fast"
         url_submit = f"{base_url}/merchant-api/pay/order/submit"
@@ -813,7 +821,7 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
             "channelExtras": {
                 "flow_type": "1",
                 "extra": json.dumps(extra_obj, ensure_ascii=False),
-                "golfer_no": golfer_a,
+                "golfer_no": golfer_no_a,
                 "channelCode": "tfk",
             },
             "filter": {"storeNo": STORE_NO},
@@ -875,8 +883,8 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
             info(f"    - {p.get('payTypeName')} {p.get('paymentPrice')}元, golferNo={p.get('golferNo')}")
 
         # 校验余额
-        balance_a_after = get_member_balance(api_client, token, "13538506002", "会员A")
-        balance_b_after = get_member_balance(api_client, token, "19928710361", "会员B")
+        balance_a_after = get_member_balance(api_client, token, phones[0], "会员A")
+        balance_b_after = get_member_balance(api_client, token, phone_b, "会员B")
         deducted_a = round(balance_a_before - balance_a_after, 2) if balance_a_after is not None else 0
         deducted_b = round(balance_b_before - balance_b_after, 2) if balance_b_after is not None else 0
         total_deducted = round(deducted_a + deducted_b, 2)
@@ -899,10 +907,4 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
             info(f"  ✓ 正常: 支付记录{len(success_pays)}笔, submit成功{success_count}次")
 
     finally:
-        # 清理资源
-        info("  清理测试资源...")
-        from utils.test_helpers import cleanup_region, cleanup_fee, cleanup_desk
-        cleanup_desk(api_client, token, desk_id, strict=False)
-        cleanup_fee(api_client, token, fee_id, strict=False)
-        cleanup_region(api_client, token, region_id, strict=False)
-        info("  资源清理完成!")
+        _cleanup_resources(api_client, token, region_id, fee_id, desk_id)

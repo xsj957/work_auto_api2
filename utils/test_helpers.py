@@ -19,6 +19,7 @@ from datetime import datetime
 
 from utils.config import config
 from utils.debug_utils import info
+from utils.log_control import WARNING
 from core.api_client import find_by_name
 
 # ================================================================
@@ -85,9 +86,9 @@ class TestFlowError(Exception):
 # ================================================================
 
 def _gen_suffix():
-    """生成唯一后缀（6位时间戳 + 1位随机 + worker ID），控制总长度"""
+    """生成唯一后缀（6位时间戳 + 2位随机 + worker ID），控制总长度"""
     worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")[-1]
-    return datetime.now().strftime("%H%M%S") + str(random.randint(0, 9)) + worker
+    return datetime.now().strftime("%H%M%S") + str(random.randint(10, 99)) + worker
 
 
 # ================================================================
@@ -336,7 +337,7 @@ def cleanup_desk(api_client, token, desk_id, strict=False):
         )
         info(f"      桌台已删除")
     except Exception as e:
-        info(f"      清理桌台失败: {e}")
+        WARNING.logger.warning(f"      清理桌台失败: {e}")
 
 
 def cleanup_fee(api_client, token, fee_id, strict=False):
@@ -352,7 +353,7 @@ def cleanup_fee(api_client, token, fee_id, strict=False):
         )
         info(f"      台费已删除")
     except Exception as e:
-        info(f"      清理台费失败: {e}")
+        WARNING.logger.warning(f"      清理台费失败: {e}")
 
 
 def cleanup_region(api_client, token, region_id, strict=False):
@@ -368,7 +369,7 @@ def cleanup_region(api_client, token, region_id, strict=False):
         )
         info(f"      区域已删除")
     except Exception as e:
-        info(f"      清理区域失败: {e}")
+        WARNING.logger.warning(f"      清理区域失败: {e}")
 
 
 # ================================================================

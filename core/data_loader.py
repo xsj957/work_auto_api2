@@ -195,6 +195,12 @@ class DataLoader:
                     for i, case in enumerate(test_cases)
                 ]
 
+        # 空数据防护：empty parametrize 会导致 pytest 报错
+        if not params:
+            import warnings
+            warnings.warn(f"YAML 文件无测试数据: {yaml_file}，测试将被跳过", stacklevel=2)
+            return pytest.mark.skip(reason=f"YAML 无测试数据: {yaml_file}")
+
         return pytest.mark.parametrize("test_case", params, ids=test_ids)
 
     @staticmethod

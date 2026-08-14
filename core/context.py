@@ -20,16 +20,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 
-# 简化的内存缓存
-_cache = {}
-
-def get_cache(key: str, default: Any = None) -> Any:
-    """获取缓存值"""
-    return _cache.get(key, default)
-
-def update_cache(key: str, value: Any):
-    """更新缓存"""
-    _cache[key] = value
+from utils.cache import get_cache, update_cache
 
 
 @dataclass

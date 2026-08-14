@@ -11,6 +11,7 @@
 - 灯控记录只断言"推送成功"的记录（排除 websocket 错误上报）
 """
 
+import atexit
 import json
 from datetime import datetime
 
@@ -25,7 +26,7 @@ DB_HOST = _db_cfg.get("host", "")
 DB_PORT = _db_cfg.get("port", 3306)
 DB_USER = _db_cfg.get("user", "")
 DB_PASSWORD = _db_cfg.get("password", "")
-DB_NAME = "xczg"
+DB_NAME = _db_cfg.get("database", "xczg")
 
 # 灯控相关 API 路径
 LIGHT_API_PATTERNS = [
@@ -40,6 +41,17 @@ EXCLUDE_OPERATES = ["websocket"]
 
 # 连接池（全局单例，避免每轮重建连接）
 _pool = None
+
+
+def _close_pool():
+    """程序退出时关闭连接池"""
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None
+
+
+atexit.register(_close_pool)
 
 
 def _get_pool():
@@ -159,21 +171,21 @@ def query_all_api_records(start_time, end_time, store_no=None,
     try:
         cursor = conn.cursor()
 
-        store_filter = ""
-        if store_no:
-            store_filter = f" AND request_params LIKE '%%{store_no}%%'"
-
-        query = f"""
+        query = """
             SELECT id, request_url, request_method, operate_name, operate_module,
                    request_params, response_body, result_code, result_msg,
                    duration, user_ip, create_time
             FROM infra_api_access_log
             WHERE create_time BETWEEN %s AND %s
             AND is_deleted = 0
-            {store_filter}
-            ORDER BY create_time ASC
         """
-        cursor.execute(query, (start_str, end_str))
+        params = [start_str, end_str]
+        if store_no:
+            query += " AND request_params LIKE %s"
+            params.append(f"%{store_no}%")
+
+        query += " ORDER BY create_time ASC"
+        cursor.execute(query, params)
         rows = cursor.fetchall()
 
         records = []
@@ -206,14 +218,12 @@ def query_light_records(start_time, end_time, store_no=None):
     try:
         cursor = conn.cursor()
 
-        # URL 过滤（% 转义为 %% 避免 pymysql 误解析）
+        # URL 过滤条件（% 在 SQL LIKE 中需要双写）
         url_conditions = " OR ".join(
-            f"request_url LIKE '%%{p.strip('%')}%%'" for p in LIGHT_API_PATTERNS
+            f"request_url LIKE %s" for _ in LIGHT_API_PATTERNS
         )
-
-        store_filter = ""
-        if store_no:
-            store_filter = f" AND request_params LIKE '%%{store_no}%%'"
+        url_params = [p.strip("%") for p in LIGHT_API_PATTERNS]
+        url_params = [f"%{p}%" for p in url_params]
 
         query = f"""
             SELECT id, request_url, operate_type, operate_name, operate_module,
@@ -223,10 +233,14 @@ def query_light_records(start_time, end_time, store_no=None):
             WHERE create_time BETWEEN %s AND %s
             AND ({url_conditions})
             AND is_deleted = 0
-            {store_filter}
-            ORDER BY create_time ASC
         """
-        cursor.execute(query, (start_str, end_str))
+        params = [start_str, end_str] + url_params
+        if store_no:
+            query += " AND request_params LIKE %s"
+            params.append(f"%{store_no}%")
+
+        query += " ORDER BY create_time ASC"
+        cursor.execute(query, params)
         rows = cursor.fetchall()
 
         records = []

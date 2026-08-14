@@ -62,10 +62,6 @@ def register_markers(config):
         "markers",
         "flaky: 不稳定测试 - 已知不稳定，需要修复"
     )
-    config.addinivalue_line(
-        "markers",
-        "skip: 跳过测试 - 暂时跳过的测试"
-    )
 
     # 业务模块标记
     config.addinivalue_line(
