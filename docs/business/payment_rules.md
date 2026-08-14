@@ -104,6 +104,61 @@
 | `paymentStatusName` | 支付状态名称 |
 | `payOrderId` | 支付单ID |
 
+## 小程序端 vs 商户后台（Web）接口对比
+
+### 核心原则
+
+小程序端和商户后台的**支付接口路径、请求体、响应结构完全相同**，区别仅在于 **Base URL** 和 **Token**。
+
+### 差异对比
+
+| 维度 | 商户后台（Web） | 小程序端（App） |
+|------|-----------------|-----------------|
+| Base URL | `{host}/fast/merchant-api/...` | `{host}/fast/app-api/...` |
+| 示例 | `https://uat.supervisionsstore.com/fast/merchant-api/store/desk/orders/createClockOpen` | `https://xczg.supervisions.cn/fast/app-api/store/desk/orders/createClockOpenV3` |
+| Token | 登录接口实时获取（`auth_token`） | `xcx_token`（抓包获取，长期有效，写入 config.yaml） |
+| Token 有效期 | 实时，过期自动重试 | 长期有效，但需手动抓包更新 |
+| 接口路径 | `merchant-api` 前缀 | `app-api` 前缀 |
+| 请求体 | 相同 | 相同 |
+| 响应结构 | 相同 | 相同 |
+
+### 注意事项
+
+1. **PROD 环境 app_host 配置**：`app_host` 不要带 `/store` 后缀，否则 app-api 接口会 404
+   ```yaml
+   # ✅ 正确
+   app_host: https://xczg.supervisions.cn
+   # ❌ 错误
+   app_host: https://xczg.supervisions.cn/store
+   ```
+2. **小程序端 token 不可自动获取**：`xcx_token` 只能通过抓包从小程序请求头中获取，写入 `config.yaml` 的 `business_data.xcx_token` 字段
+3. **UAT 环境**：`xcx_token` 已在 config.yaml 中配置，有效期 7 天
+
+---
+
+### 混合调用模式（Web 建资源 + 小程序支付）
+
+测试中常用模式：**Web 端创建资源 → 小程序端执行支付操作**
+
+```
+Web 端（merchant-api）:
+  1. 创建区域/台费/桌台（fixture 自动完成）
+  2. 计时开台（createClockOpen）
+  3. 绑定会员（addGolfer）
+  4. 等待计费 ≥ 65 秒
+
+小程序端（app-api）:
+  5. 关台（closeDesk）         ← 与 Web 端相同接口
+  6. 计算金额（pay）           ← 与 Web 端相同接口
+  7. 创建支付单（payment/create）← 与 Web 端相同接口
+  8. 提交支付（pay/order/submit）← 与 Web 端相同接口
+  9. 支付后校验
+```
+
+**关键**：步骤 5-9 的接口路径在两端完全相同，只需切换 Base URL（`merchant-api` → `app-api`）和 Token（`auth_token` → `xcx_token`）即可。
+
+---
+
 ## 注意事项
 
 1. **台费卡支付范围限制**：台费卡只能支付台费，不能支付商品和服务费

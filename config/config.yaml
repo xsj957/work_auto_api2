@@ -80,7 +80,7 @@ environments:
       login:
         username: "13538506002"
         password: "506002"
-      xcx_token: "b214b977d1a34dce8c970bf979a9fb13"   # 小程序Token，7天有效
+      xcx_token: "43e39e7ac6274e6dabd26fa20300aa68"   # 小程序Token，7天有效
       storeNo: "692256"
       merchantNo: "MI000026081317423923"
       userNo: "MU202606171016150897"
@@ -153,14 +153,14 @@ environments:
 
     business_data:
       login:
-        username: "xsj123"
-        password: "123456"
-      xcx_token: ""
-      storeNo: ""
-      merchantNo: ""
+        username: "linjiakun"
+        password: "linjiakun"
+      xcx_token: "de594b851c7b40abab976f4bc41358bd"
+      storeNo: "219441"
+      merchantNo: "merchantNo"
       userNo: ""
       device_id: ""
-      golferPhones: []
+      golferPhones: ["13538506002", "19928710361"]
       lsid: ""
       success_code: 200
 

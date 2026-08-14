@@ -181,34 +181,21 @@ def test_xxx(self, ...):
 - `step_name` 用于日志前缀和 Allure 步骤标题，必须填写
 - **ERROR = WARNING = INFO**（同一 `_SessionLogger` 实例），区分级别仅语义用途
 
+### 14. 小程序端 vs 商户后台（Web）接口
+
+小程序端和商户后台的**支付接口路径、请求体、响应结构完全相同**，差异如下：
+
+| 维度 | 商户后台（Web） | 小程序端（App） |
+|------|-----------------|-----------------|
+| 路径前缀 | `merchant-api` | `app-api` |
+| Token | 登录实时获取 | `xcx_token`（抓包获取，写入 config） |
+| Base URL | `{host}/fast/merchant-api/...` | `{host}/fast/app-api/...` |
+
+**混合调用模式**：Web 端创建资源（region/fee/desk）+ 开台绑定会员 → 小程序端执行支付操作（closeDesk/pay/submit）。只需切换路径前缀和 token，接口路径和参数不变。
+
+**配置注意**：PROD 环境 `app_host` 不要带 `/store` 后缀，否则 app-api 接口返回 404。
+
 ## 核心架构
-
-### 目录结构
-
-```
-conftest.py              # 根级配置：sys.path 注入、pytest hooks、日志、fixture 聚合
-config/config.yaml       # 环境配置、业务数据、通知设置
-core/
-  api_client.py          # APIClient：HTTP 封装、自动日志、严格/宽松模式、响应时间监控
-  assertions.py          # 链式断言：assert_response(resp).code_is(200).msg_contains("成功").validate()
-  data_loader.py         # YAML 数据驱动：DataLoader.parametrize() 将 YAML 转为 pytest.mark.parametrize
-  decorators.py          # 装饰器：@retry, @with_timing, @skip_if, @robust_test
-  context.py             # TestContext：认证上下文数据类
-fixtures/
-  auth_fixtures.py       # 认证 fixtures（session 级）：api_client, auth_token, auth_context
-  resource_fixtures.py   # 资源 fixtures（function 级）：test_region, test_fee, test_desk, test_resources
-testcase/                # 测试用例目录（非 tests/）
-  payment/               # 支付测试
-  lighting/              # 灯控测试
-utils/
-  config.py              # Config 单例，加载 config.yaml，支持 config.get("business_data.login.username")
-  data_factory.py        # 测试数据工厂：random_phone(), desk_name() 等
-  log_control.py         # 日志引擎：按日期分目录（logs/YYYYMMDD/），自动清理非今日日志
-  markers.py             # Marker 注册和优先级管理
-  debug_utils.py         # 日志工具：info() / capture_failure 装饰器
-  test_helpers.py        # 统一资源管理（灯控+支付共用）：创建/验证/清理 region/fee/desk
-  payment_helpers.py     # 支付专属逻辑（从 test_helpers 导入共享函数）
-```
 
 ### 关键模式
 
