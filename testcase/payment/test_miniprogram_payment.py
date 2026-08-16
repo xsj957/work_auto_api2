@@ -5,15 +5,16 @@
 Web 端建资源 + 开台绑定会员 → 小程序端完成支付
 
 关键区别（vs test_payment_flow.py）：
-- 关台 / 计算金额 / 创建支付单 / 提交支付 → 使用 app-api 前缀 + xcx_token
+- 计算金额 / 创建支付单 / 提交支付 → 使用 app-api 前缀 + xcx_token
+- 关台操作 → 使用 merchant-api（小程序端无 closeDesk 接口）
 - xcx_token 从小程序抓包获取，写入 config.yaml，长期有效
 - 其他接口路径和参数与 Web 端完全一致
 
 业务流程:
-  Web:   创建资源(region/fee/desk) → 查询绑定会员 → 计时开台(等待65s)
-  小程序: closeDesk → pay(计算金额) → payment/create → pay/order/submit
+  Web:   创建资源(region/fee/desk) → 查询绑定会员 → 计时开台(等待65s) → closeDesk(Web端)
+  小程序：pay(计算金额) → payment/create → pay/order/submit
        → 支付后校验 → cancelPay → 最终detail
-  Web:   清理资源
+  Web:   needPay → 清理资源
 """
 
 # 1. 标准库
@@ -47,7 +48,7 @@ from utils.markers import mark_priority
 def test_miniprogram_payment_flow(api_client, auth_context, channel_code, channel_name, member_phone):
     """
     小程序支付流程:
-    Web建资源 → 开台绑定会员 → 小程序端关台/计算金额/创建支付单/提交支付 → 校验
+    Web建资源 → 开台绑定会员 → Web关台 → 小程序端计算金额/创建支付单/提交支付 → 校验
     """
     token = auth_context.token
     merchant_no = auth_context.merchant_no
@@ -113,10 +114,10 @@ def test_miniprogram_payment_flow(api_client, auth_context, channel_code, channe
             token, "needPay(Web)"
         )
 
-        # Step 12: 小程序端关台
-        info(f"  [小程序] 关台... orderNo={order_no}")
+        # Step 12: Web端关台（小程序端无 closeDesk 接口）
+        info(f"  [Web] 关台... orderNo={order_no}")
         response = api_client.post(
-            "/app-api/store/desk/orders/closeDesk",
+            "/merchant-api/store/desk/orders/closeDesk",
             {
                 "orderNo": order_no,
                 "close": False,
@@ -124,13 +125,13 @@ def test_miniprogram_payment_flow(api_client, auth_context, channel_code, channe
                 "golferNoList": [golfer_no] if golfer_no else [],
                 "filter": {"storeNo": STORE_NO},
             },
-            token=xcx_token, step_name="小程序关台"
+            token=token, step_name="Web关台"
         )
         data = response.get_data()
         child_order_no = data.get("orderNo", data) if isinstance(data, dict) else data
         if not child_order_no:
             child_order_no = order_no
-        info(f"      小程序关台成功! 子订单号={child_order_no}")
+        info(f"      Web关台成功! 子订单号={child_order_no}")
 
         # Step 13: 小程序端计算金额
         info(f"  [小程序] 计算金额... orderNo={child_order_no}")

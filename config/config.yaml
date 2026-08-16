@@ -92,6 +92,11 @@ environments:
       success_code: 200
 
     payment_test:
+      # 并发测试配置（asyncio + aiohttp 实现）
+      concurrency:
+        submit_workers: 2        # test_02 双重提交并发数
+        stress_workers: 10000     # test_07 压力测试并发数
+
       # 轮询查询配置（系统调度接口新增资源后需要等待同步）
       # 稳定性测试连续执行时服务端同步较慢，需要更长等待
       polling:
@@ -165,6 +170,10 @@ environments:
       success_code: 200
 
     payment_test:
+      concurrency:
+        submit_workers: 2
+        stress_workers: 1000
+
       polling:
         initial_wait: 8
         interval: 3

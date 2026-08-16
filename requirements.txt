@@ -20,6 +20,7 @@ openpyxl>=3.0.9
 DingtalkChatbot>=1.5.3
 
 # 可选依赖
+aiohttp>=3.8.0  # 异步HTTP（并发压测）
 pytest-xdist>=3.0.0  # 并行测试
 pytest-forked>=1.4.0  # 进程隔离
 requests-toolbelt>=0.9.1  # HTTP 工具

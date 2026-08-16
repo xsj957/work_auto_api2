@@ -13,12 +13,12 @@
   → 清理数据
 """
 
+import asyncio
 import json
-import multiprocessing
 import time
 
+import aiohttp
 import pytest
-import requests as http_requests
 
 from utils.config import config
 from utils.payment_helpers import (
@@ -37,55 +37,192 @@ from utils.test_helpers import _gen_suffix, cleanup_desk, cleanup_fee, cleanup_r
 
 
 # ============================================================
-#  多进程 worker（模块级函数，multiprocessing 要求可 pickle）
+#  异步协程 worker（asyncio + aiohttp，轻量高并发）
 # ============================================================
 
-def _submit_worker(url_submit, payload, headers, fire, result_queue):
+async def _safe_parse_response(resp):
+    """动态解析 aiohttp 响应 —— 不预设状态码 / Content-Type / 响应格式。
+
+    策略:
+      1. 读取原始字节（最底层，避免 resp.text() 编码异常）
+      2. 优先尝试 JSON 解析（不论 HTTP 状态码 —— 服务端可能在 500 时也返回 JSON）
+      3. JSON 失败则按 utf-8 → gbk → latin-1（latin-1 可解码任意字节）顺序回退到文本
+      4. 全部失败才返回字节长度兜底
+      5. 始终保留 http_status 字段供分类使用
     """
-    多进程并发 submit worker。
-    模拟 JMeter 线程组：每个进程是独立的 HTTP 客户端，
-    等待 fire 信号后同时发出请求。
+    status = resp.status
+
+    # 1. 读取原始字节
+    try:
+        raw = await resp.read()
+    except Exception as e:
+        return {
+            "code": -status,
+            "msg": f"HTTP{status} 响应读取失败({type(e).__name__}): {str(e)[:100]}",
+            "http_status": status,
+        }
+
+    if not raw:
+        return {"code": -status, "msg": f"HTTP{status} 空响应", "http_status": status}
+
+    # 2. 优先尝试 JSON（服务端可能在非 200 状态码下也返回 JSON 错误体）
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            data.setdefault("http_status", status)
+            return data
+        # JSON 但不是 dict（如 list / 字符串）→ 按文本处理
+    except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+        pass
+
+    # 3. 回退到文本，按优先级尝试多种编码（latin-1 作为兜底，可解码任意字节）
+    text = None
+    for enc in ("utf-8", "gbk", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    if text is None:
+        return {
+            "code": -status,
+            "msg": f"HTTP{status} 二进制响应({len(raw)}字节)",
+            "http_status": status,
+        }
+
+    snippet = text.strip()[:200]
+    return {
+        "code": -status,
+        "msg": f"HTTP{status} 非JSON: {snippet}",
+        "http_status": status,
+    }
+
+
+async def _async_submit(session, url, payload, headers, fire):
+    """异步并发 submit 协程。等待 fire 信号后同时发出请求。"""
+    await fire.wait()
+    try:
+        async with session.post(url, json=payload, headers=headers, ssl=False) as resp:
+            return await _safe_parse_response(resp)
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+        # 区分网络层异常：连接失败、超时、被拒绝等
+        return {"code": -1, "msg": f"网络异常({type(e).__name__}): {str(e)[:150]}"}
+    except Exception as e:
+        return {"code": -1, "msg": f"未知异常({type(e).__name__}): {str(e)[:150]}"}
+
+
+async def _async_create(session, url, payload, headers, fire, idx):
+    """异步并发 create 协程（带索引，用于需要追踪单次请求的场景）。"""
+    await fire.wait()
+    try:
+        async with session.post(url, json=payload, headers=headers, ssl=False) as resp:
+            data = await _safe_parse_response(resp)
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+        data = {"code": -1, "msg": f"网络异常({type(e).__name__}): {str(e)[:150]}", "data": None}
+    except Exception as e:
+        data = {"code": -1, "msg": f"未知异常({type(e).__name__}): {str(e)[:150]}", "data": None}
+    return {"idx": idx, "code": data.get("code", 0), "msg": data.get("msg", ""), "data": data.get("data")}
+
+
+async def _async_close(session, url, payload, headers, fire):
+    """异步 closeDesk 协程。"""
+    await fire.wait()
+    try:
+        async with session.post(url, json=payload, headers=headers, ssl=False) as resp:
+            data = await _safe_parse_response(resp)
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+        data = {"code": -1, "msg": f"网络异常({type(e).__name__}): {str(e)[:150]}", "data": None}
+    except Exception as e:
+        data = {"code": -1, "msg": f"未知异常({type(e).__name__}): {str(e)[:150]}", "data": None}
+    return {"type": "close", "code": data.get("code", 0), "msg": data.get("msg", ""), "data": data.get("data")}
+
+
+async def _async_cancel(session, url, payload, headers, fire):
+    """异步 cancelPay 协程。"""
+    await fire.wait()
+    try:
+        async with session.post(url, json=payload, headers=headers, ssl=False) as resp:
+            data = await _safe_parse_response(resp)
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+        data = {"code": -1, "msg": f"网络异常({type(e).__name__}): {str(e)[:150]}", "data": None}
+    except Exception as e:
+        data = {"code": -1, "msg": f"未知异常({type(e).__name__}): {str(e)[:150]}", "data": None}
+    return {"type": "cancel", "code": data.get("code", 0), "msg": data.get("msg", ""), "data": data.get("data")}
+
+
+def _classify_result(r):
+    """将单次结果归类为人类可读的类别键。
+
+    类别:
+      success                - 业务成功（code==200）
+      business_<code>        - 业务失败（如 business_500 并发锁、business_1007002002 已支付）
+      http_<status>          - HTTP 非 200（如 http_502、http_504）
+      http200_non_json       - HTTP 200 但响应非 JSON（服务器异常）
+      network_<ErrorType>    - 网络层异常（ClientConnectionError / ServerTimeoutError 等）
+      unknown                - 其他未知异常
     """
-    fire.wait()
+    code = r.get("code")
+    msg = str(r.get("msg", ""))
+    if code == 200:
+        return "success"
+    if code == -200:
+        return "http200_non_json"
+    if code < 0 and code != -1:
+        # HTTP 非 200 → 取 http_status 或反推
+        http_status = r.get("http_status") or -code
+        return f"http_{http_status}"
+    if code == -1:
+        # 网络异常 → 提取异常类型
+        m = msg.split("(")
+        if len(m) >= 2:
+            err_type = m[1].split(")")[0]
+            return f"network_{err_type}"
+        return "network_unknown"
+    if code == 0:
+        return "business_0"
+    return f"business_{code}"
+
+
+def _summarize_results(results, label="submit"):
+    """分类汇总并发测试结果，按类别统计数量并各取 1 条样本。
+
+    相比逐条打印 10000 行，汇总日志可读性更高。
+    """
+    from collections import Counter, defaultdict
+    total = len(results)
+    success_count = sum(1 for r in results if r.get("code") == 200)
+    info(f"  [{label}] 结果: 成功{success_count}次, 失败{total - success_count}次, 总计{total}次")
+
+    # 按类别分组
+    category_counter = Counter()
+    category_samples = defaultdict(list)
+    for r in results:
+        cat = _classify_result(r)
+        category_counter[cat] += 1
+        if len(category_samples[cat]) < 2:
+            category_samples[cat].append(r)
+
+    # 按数量降序输出每类统计 + 样本
+    for cat, count in category_counter.most_common():
+        info(f"    [{cat}] {count}次")
+        for sample in category_samples[cat]:
+            info(f"      示例: code={sample.get('code')}, msg={sample.get('msg', '')[:120]}")
+
+
+def _run_async(coro):
+    """在同步上下文中运行异步协程（兼容 pytest 已有事件循环）。"""
     try:
-        resp = http_requests.post(url_submit, json=payload, headers=headers, timeout=15, verify=False)
-        data = resp.json()
-    except Exception as e:
-        data = {"code": 0, "msg": str(e)}
-    result_queue.put(data)
-
-
-def _create_worker(url_create, payload, headers, fire, result_queue, idx):
-    """多进程并发 create worker。"""
-    fire.wait()
-    try:
-        resp = http_requests.post(url_create, json=payload, headers=headers, timeout=15, verify=False)
-        data = resp.json()
-    except Exception as e:
-        data = {"code": 0, "msg": str(e), "data": None}
-    result_queue.put({"idx": idx, "code": data.get("code", 0), "msg": data.get("msg", ""), "data": data.get("data")})
-
-
-def _close_worker(url_close, payload, headers, fire, result_queue):
-    """多进程 closeDesk worker。"""
-    fire.wait()
-    try:
-        resp = http_requests.post(url_close, json=payload, headers=headers, timeout=15, verify=False)
-        data = resp.json()
-    except Exception as e:
-        data = {"code": 0, "msg": str(e), "data": None}
-    result_queue.put({"type": "close", "code": data.get("code", 0), "msg": data.get("msg", ""), "data": data.get("data")})
-
-
-def _cancel_worker(url_cancel, payload, headers, fire, result_queue):
-    """多进程 cancelPay worker。"""
-    fire.wait()
-    try:
-        resp = http_requests.post(url_cancel, json=payload, headers=headers, timeout=15, verify=False)
-        data = resp.json()
-    except Exception as e:
-        data = {"code": 0, "msg": str(e), "data": None}
-    result_queue.put({"type": "cancel", "code": data.get("code", 0), "msg": data.get("msg", ""), "data": data.get("data")})
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result()
+    else:
+        return asyncio.run(coro)
 
 
 # ============================================================
@@ -134,7 +271,7 @@ def _setup_ready_to_pay(api_client, auth_context):
 
 
 def _do_concurrent_submit(api_client, auth_context, channel_code="czk"):
-    """并发 submit 核心逻辑，支持不同支付渠道（多进程实现）"""
+    """并发 submit 核心逻辑，支持不同支付渠道（asyncio + aiohttp 实现）"""
     info("=" * 60)
     info(f"  用例2[{channel_code}]: 并发 submit - 同一 payOrderId 异步同时提交两次")
     info("=" * 60)
@@ -143,7 +280,6 @@ def _do_concurrent_submit(api_client, auth_context, channel_code="czk"):
     try:
         pay_order_id = create_payment(api_client, token, child_order_no, total_amount, golfer_no)
 
-        # 多进程并发 submit
         base_url = config.host + "/fast"
         url_submit = f"{base_url}/merchant-api/pay/order/submit"
 
@@ -169,33 +305,22 @@ def _do_concurrent_submit(api_client, auth_context, channel_code="czk"):
             "filter": {"storeNo": STORE_NO},
         }
         headers = {"Content-Type": "application/json", "Authorization": token}
+        concurrency = config.payment_test.get("concurrency", {}).get("submit_workers", 2)
 
-        fire = multiprocessing.Event()
-        result_queue = multiprocessing.Queue()
-        processes = []
+        async def _do_submit():
+            fire = asyncio.Event()
+            conn = aiohttp.TCPConnector(ssl=False, limit=0)
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
+                tasks = [_async_submit(session, url_submit, submit_payload, headers, fire) for _ in range(concurrency)]
+                # 所有协程就绪后同时释放
+                await asyncio.sleep(0.5)
+                info(f"  发令！{concurrency} 个协程同时发出 submit 请求...")
+                fire.set()
+                return await asyncio.gather(*tasks, return_exceptions=True)
 
-        for i in range(2):
-            p = multiprocessing.Process(
-                target=_submit_worker,
-                args=(url_submit, submit_payload, headers, fire, result_queue),
-                name=f"submit-{i+1}",
-            )
-            processes.append(p)
-
-        for p in processes:
-            p.start()
-
-        time.sleep(0.5)
-        info(f"  发令！2 个进程同时发出 submit 请求...")
-        fire.set()
-
-        for p in processes:
-            p.join(timeout=30)
-
-        # 收集结果
-        results = []
-        while not result_queue.empty():
-            results.append(result_queue.get())
+        results = _run_async(_do_submit())
+        results = [r for r in results if not isinstance(r, Exception)]
 
         success_count = sum(1 for r in results if r.get("code") == 200)
         for idx, r in enumerate(results):
@@ -204,7 +329,7 @@ def _do_concurrent_submit(api_client, auth_context, channel_code="czk"):
             else:
                 info(f"      第{idx+1}次 submit 失败: {r.get('msg')}")
 
-        info(f"      结果: {success_count} 笔成功, {2 - success_count} 笔失败")
+        info(f"      结果: {success_count} 笔成功, {concurrency - success_count} 笔失败")
         if success_count >= 2:
             info(f"      ⚠️️⚠️ 两次 submit 都成功! 发生重复扣款!")
 
@@ -343,43 +468,34 @@ def test_01_concurrent_create(api_client, auth_context):
     token, _, golfer_no, child_order_no, total_amount, region_id, fee_id, desk_id = _setup_ready_to_pay(api_client, auth_context)
 
     try:
-        # 多进程并发 create
+        # asyncio 并发 create
         base_url = config.host + "/fast"
         url_create = f"{base_url}/merchant-api/store/desk/orders/payment/create"
         headers = {"Content-Type": "application/json", "Authorization": token}
         payload = {"orderNo": child_order_no, "paymentPrice": total_amount,
                    "needPrintBill": False, "golferNo": golfer_no}
+        concurrency = config.payment_test.get("concurrency", {}).get("submit_workers", 2)
 
-        fire = multiprocessing.Event()
-        result_queue = multiprocessing.Queue()
-        processes = []
+        async def _do_create():
+            fire = asyncio.Event()
+            conn = aiohttp.TCPConnector(ssl=False, limit=0)
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
+                tasks = [_async_create(session, url_create, payload, headers, fire, i + 1) for i in range(concurrency)]
+                await asyncio.sleep(0.5)
+                info(f"  发令！{concurrency} 个协程同时发出 create 请求...")
+                fire.set()
+                return await asyncio.gather(*tasks, return_exceptions=True)
 
-        for i in range(2):
-            p = multiprocessing.Process(
-                target=_create_worker,
-                args=(url_create, payload, headers, fire, result_queue, i + 1),
-                name=f"create-{i+1}",
-            )
-            processes.append(p)
+        results = _run_async(_do_create())
+        results = [r for r in results if not isinstance(r, Exception)]
 
-        for p in processes:
-            p.start()
+        results_dict = {}
+        for r in results:
+            results_dict[r["idx"]] = {"code": r["code"], "msg": r["msg"], "data": r["data"]}
+            info(f"      协程{r['idx']}: code={r['code']}, msg={r['msg']}, payOrderId={r['data']}")
 
-        time.sleep(0.5)
-        info(f"  发令！2 个进程同时发出 create 请求...")
-        fire.set()
-
-        for p in processes:
-            p.join(timeout=30)
-
-        # 收集结果
-        results = {}
-        while not result_queue.empty():
-            r = result_queue.get()
-            results[r["idx"]] = {"code": r["code"], "msg": r["msg"], "data": r["data"]}
-            info(f"      进程{r['idx']}: code={r['code']}, msg={r['msg']}, payOrderId={r['data']}")
-
-        success_ids = [r["data"] for r in results.values() if r["code"] == 200 and r["data"]]
+        success_ids = [r["data"] for r in results_dict.values() if r["code"] == 200 and r["data"]]
         info(f"  成功创建 {len(success_ids)} 笔支付单: {success_ids}")
 
         for pid in success_ids:
@@ -544,7 +660,7 @@ def test_05_create_during_checkout(api_client, auth_context):
     token, _, golfer_no, child_order_no_unused, total_amount, region_id, fee_id, desk_id = _setup_ready_to_pay(api_client, auth_context)
 
     try:
-        # 多进程并发: closeDesk + create
+        # asyncio 并发: closeDesk + create
         base_url = config.host + "/fast"
         url_close = f"{base_url}/merchant-api/store/desk/orders/closeDesk"
         url_create = f"{base_url}/merchant-api/store/desk/orders/payment/create"
@@ -554,35 +670,24 @@ def test_05_create_during_checkout(api_client, auth_context):
         create_payload = {"orderNo": child_order_no_unused, "paymentPrice": total_amount,
                           "needPrintBill": False, "golferNo": golfer_no}
 
-        fire = multiprocessing.Event()
-        result_queue = multiprocessing.Queue()
+        async def _do_concurrent():
+            fire = asyncio.Event()
+            conn = aiohttp.TCPConnector(ssl=False, limit=0)
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
+                task_close = _async_close(session, url_close, close_payload, headers, fire)
+                task_create = _async_create(session, url_create, create_payload, headers, fire, 1)
+                await asyncio.sleep(0.5)
+                info(f"  发令！closeDesk 和 create 协程同时发出...")
+                fire.set()
+                results = await asyncio.gather(task_close, task_create, return_exceptions=True)
+                return [r for r in results if not isinstance(r, Exception)]
 
-        p_close = multiprocessing.Process(
-            target=_close_worker,
-            args=(url_close, close_payload, headers, fire, result_queue),
-            name="close-desk",
-        )
-        p_create = multiprocessing.Process(
-            target=_create_worker,
-            args=(url_create, create_payload, headers, fire, result_queue, 1),
-            name="create-payment",
-        )
+        results = _run_async(_do_concurrent())
 
-        p_close.start()
-        p_create.start()
-
-        time.sleep(0.5)
-        info(f"  发令！closeDesk 和 create 同时发出...")
-        fire.set()
-
-        p_close.join(timeout=30)
-        p_create.join(timeout=30)
-
-        # 收集结果
         close_result = {}
         create_result = {}
-        while not result_queue.empty():
-            r = result_queue.get()
+        for r in results:
             if r.get("type") == "close":
                 close_result["data"] = {"code": r["code"], "msg": r["msg"], "data": r["data"]}
             else:
@@ -706,8 +811,8 @@ def test_06_two_golfers_pay_vs_cancel(api_client, auth_context):
         pay_id_b = pay_data_b.get("payOrderId") if isinstance(pay_data_b, dict) else pay_data_b
         info(f"      B的payOrderId={pay_id_b}")
 
-        # 第3步: A提交支付 + B关闭支付页面（多进程并行）
-        info(f"  第3步: A提交支付 + B关闭页面（多进程并行）...")
+        # 第3步: A提交支付 + B关闭支付页面（asyncio 协程并行）
+        info(f"  第3步: A提交支付 + B关闭页面（asyncio协程并行）...")
         base_url = config.host + "/fast"
         url_submit = f"{base_url}/merchant-api/pay/order/submit"
         url_cancel = f"{base_url}/merchant-api/store/desk/orders/cancelPay"
@@ -725,35 +830,25 @@ def test_06_two_golfers_pay_vs_cancel(api_client, auth_context):
         }
         cancel_payload = {"orderNo": child_order_no, "filter": {"storeNo": STORE_NO}}
 
-        fire = multiprocessing.Event()
-        result_queue = multiprocessing.Queue()
+        async def _do_pay_vs_cancel():
+            fire = asyncio.Event()
+            conn = aiohttp.TCPConnector(ssl=False, limit=0)
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
+                task_submit = _async_submit(session, url_submit, submit_payload, headers, fire)
+                task_cancel = _async_cancel(session, url_cancel, cancel_payload, headers, fire)
+                await asyncio.sleep(0.5)
+                info(f"  发令！A提交支付 + B关闭页面协程同时发出...")
+                fire.set()
+                results = await asyncio.gather(task_submit, task_cancel, return_exceptions=True)
+                return [r for r in results if not isinstance(r, Exception)]
 
-        p_submit = multiprocessing.Process(
-            target=_submit_worker,
-            args=(url_submit, submit_payload, headers, fire, result_queue),
-            name="a-submit",
-        )
-        p_cancel = multiprocessing.Process(
-            target=_cancel_worker,
-            args=(url_cancel, cancel_payload, headers, fire, result_queue),
-            name="b-cancel",
-        )
-
-        p_submit.start()
-        p_cancel.start()
-
-        time.sleep(0.5)
-        info(f"  发令！A提交支付 + B关闭页面同时发出...")
-        fire.set()
-
-        p_submit.join(timeout=30)
-        p_cancel.join(timeout=30)
+        results = _run_async(_do_pay_vs_cancel())
 
         # 收集结果
         result_a = {}
         result_b = {}
-        while not result_queue.empty():
-            r = result_queue.get()
+        for r in results:
             if r.get("type") == "cancel":
                 result_b["cancel"] = {"code": r["code"], "msg": r["msg"]}
             else:
@@ -776,9 +871,9 @@ def test_06_two_golfers_pay_vs_cancel(api_client, auth_context):
 @mark_priority(0)
 @capture_failure
 def test_07_two_golfers_concurrent_submit(api_client, auth_context):
-    """多进程并发 submit 测试 - 检测余额异常扣款"""
+    """asyncio 高并发 submit 测试 - 检测余额异常扣款（协程数从配置文件读取）"""
     info("=" * 60)
-    info("  用例7: 双会员高并发submit - 检测余额异常扣款")
+    info("  用例7: 高并发submit - 检测余额异常扣款（asyncio协程）")
     info("=" * 60)
 
     ctx = _setup_two_golfers(api_client, auth_context)
@@ -794,8 +889,12 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
     phones = config.business_data.get("golferPhones", ["13538506002"])
     phone_b = phones[1]
 
+    # 从配置文件读取并发数
+    CONCURRENCY = config.payment_test.get("concurrency", {}).get("stress_workers", 100)
+
     info(f"  应付金额={total_amount}元")
     info(f"  会员A初始余额={balance_a_before}元, 会员B初始余额={balance_b_before}元")
+    info(f"  并发协程数: {CONCURRENCY}（来自 config.yaml payment_test.concurrency.stress_workers）")
 
     try:
 
@@ -804,7 +903,7 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
         pay_order_id = create_payment(api_client, token, child_order_no, total_amount, golfer_no=None)
         info(f"  payOrderId={pay_order_id}")
 
-        # ---- 多进程并发 submit（模拟 JMeter 线程组） ----
+        # ---- asyncio 并发 submit（模拟 JMeter 线程组） ----
         extra_obj = {
             "orderType": "桌台订单",
             "givePrice": "0",
@@ -826,46 +925,24 @@ def test_07_two_golfers_concurrent_submit(api_client, auth_context):
             },
             "filter": {"storeNo": STORE_NO},
         }
-
-        CONCURRENCY = 1000  # 并发数
-        fire = multiprocessing.Event()
-        result_queue = multiprocessing.Queue()
-        processes = []
         headers = {"Content-Type": "application/json", "Authorization": token}
 
-        info(f"  启动 {CONCURRENCY} 个进程，payload 完全一致...")
-        for i in range(CONCURRENCY):
-            p = multiprocessing.Process(
-                target=_submit_worker,
-                args=(url_submit, submit_payload, headers, fire, result_queue),
-                name=f"submit-{i+1}",
-            )
-            processes.append(p)
+        async def _do_stress():
+            fire = asyncio.Event()
+            conn = aiohttp.TCPConnector(ssl=False, limit=0)
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
+                tasks = [_async_submit(session, url_submit, submit_payload, headers, fire) for _ in range(CONCURRENCY)]
+                await asyncio.sleep(0.5)
+                info(f"  发令！{CONCURRENCY} 个协程同时发出 submit 请求...")
+                fire.set()
+                return await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 先启动所有进程（此时都阻塞在 fire.wait()）
-        for p in processes:
-            p.start()
-
-        # 确认所有进程都已就绪
-        time.sleep(0.5)
-
-        info(f"  发令！{CONCURRENCY} 个进程同时发出 submit 请求...")
-        fire.set()  # 同一时刻释放所有进程
-
-        # 等待所有进程完成
-        for p in processes:
-            p.join(timeout=30)
-
-        # 收集结果
-        results = []
-        while not result_queue.empty():
-            results.append(result_queue.get())
+        results = _run_async(_do_stress())
+        results = [r for r in results if not isinstance(r, Exception)]
 
         success_count = sum(1 for r in results if r.get("code") == 200)
-        fail_count = len(results) - success_count
-        info(f"  结果: 成功{success_count}次, 失败{fail_count}次, 总计{len(results)}次")
-        for idx, r in enumerate(results):
-            info(f"    [{idx+1}] code={r.get('code')}, msg={r.get('msg')}")
+        _summarize_results(results, label="submit")
 
         # 等待服务端处理完成
         time.sleep(3)
